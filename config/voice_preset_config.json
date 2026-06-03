@@ -1,0 +1,17 @@
+{
+  "presets": {
+    "female_child_bright": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_3.wav",
+    "female_child_soft": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_6.wav",
+    "female_young_warm": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_4.wav",
+    "female_middle_aged_warm": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_11.wav",
+    "female_elderly_soft": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_6.wav",
+    "female_young_sharp": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_11.wav",
+    "male_child_bright": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_3.wav",
+    "male_young_warm": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_1.wav",
+    "male_middle_aged_deep": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_10.wav",
+    "male_middle_aged_sharp": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_1.wav",
+    "male_elderly_deep": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_10.wav",
+    "male_elderly_rough": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_10.wav"
+  },
+  "narrator": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_4.wav"
+}

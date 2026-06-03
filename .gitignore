@@ -1,0 +1,6 @@
+__pycache__/
+output/audio_segments/
+output/audio_final/
+output/analysis/*.json
+debug_resolve.py
+.claude/
