@@ -1,6 +1,36 @@
+# __pycache__/
+# output/audio_segments/
+# output/audio_final/
+# output/analysis/*.json
+# debug_resolve.py
+# .claude/
+# *.wav
+
+# Python cache
 __pycache__/
+*.pyc
+*.pyo
+
+# Generated audio
+*.wav
+*.mp3
+*.flac
+*.m4a
+
+# Generated outputs
 output/audio_segments/
 output/audio_final/
+output/debug/
 output/analysis/*.json
+output-indextts/
+output-qwen-cosy/
+
+
+# Local debug files
 debug_resolve.py
+
+# Claude local config
 .claude/
+
+# Drawings / large local files
+*.eddx

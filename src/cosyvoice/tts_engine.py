@@ -1,5 +1,9 @@
-"""TTS 引擎：调用 MOSS-TTS-v1.5 服务器生成音频片段，并拼接为完整 wav。"""
+"""CosyVoice instruct 模式 TTS 引擎。
 
+调用 /v1/cosyvoice/generate 合成音频片段，并拼接为完整 wav。
+"""
+
+import base64
 import os
 import time
 from pathlib import Path
@@ -9,8 +13,7 @@ import numpy as np
 import requests
 import soundfile as sf
 
-_API_URL = "http://10.154.39.97:8002"
-os.environ["no_proxy"] = "*"
+_API_URL = "http://10.154.39.97:8005"
 
 
 # ----------------------------------------------------------------------
@@ -20,46 +23,31 @@ os.environ["no_proxy"] = "*"
 
 def synthesize_remote(
     text: str,
-    reference_audio_path: str,
-    temperature: float = 1.5,
-    top_p: float = 0.5,
+    prompt_audio_path: str,
+    prompt_text: str,
     output_path: str = None,
 ) -> str:
-    """调用服务器 /api/tts/upload 生成音频。"""
-    project_root = Path(__file__).resolve().parent.parent
-    ref_path = project_root / reference_audio_path
+    """调用 CosyVoice /v1/cosyvoice/generate 生成音频。"""
+    with open(prompt_audio_path, "rb") as f:
+        prompt_audio = base64.b64encode(f.read()).decode("utf-8")
 
-    if not ref_path.exists():
-        raise FileNotFoundError(f"参考音频不存在: {ref_path}")
-
-    # 温度最低保护
-    temperature = max(float(temperature), 1.5)
-
-    # 不设置 max_new_tokens，使用服务器默认值 4096
-    # 仅调试用，临时打印
-    files = {"reference": open(ref_path, "rb")}
-    data = {
+    payload = {
         "text": text,
-        "temperature": temperature,
-        "top_p": top_p,
+        "prompt_text": prompt_text,       # e.g. "用平静的语气说。<|endofprompt|>"
+        "prompt_audio": prompt_audio,
+        "mode": "instruct",
+        "stream": False,
     }
-    # 打印文本长度（用于后续分析 tokens 消耗）
-    text_len = len(text)
 
     response = requests.post(
-        f"{_API_URL}/api/tts/upload",
-        data=data,
-        files=files,
+        f"{_API_URL}/v1/cosyvoice/generate",
+        json=payload,
+        proxies={"http": None, "https": None},
         timeout=120,
     )
-    files["reference"].close()
 
     if response.status_code != 200:
         raise Exception(f"API error {response.status_code}: {response.text[:200]}")
-
-    tokens_used = response.headers.get("X-Tokens-Used", "N/A")
-    duration = response.headers.get("X-Duration", "N/A")
-    print(f"[max_tokens=default, tokens_used={tokens_used}, duration={duration}s, chars={text_len}]", end=" ")
 
     if output_path:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -83,26 +71,17 @@ def _trim_middle_silence(
 ) -> str:
     """检测并裁剪音频内部过长的静音段。
 
-    用短时窗口的 RMS 能量判断静音，避免被单帧微小噪声干扰。
-    如果某段静音 > max_silence_ms，裁剪到 max_silence_ms。
-
-    Args:
-        audio_path: 音频文件路径（会被覆盖修改）
-        max_silence_ms: 每段静音最大允许时长（毫秒）
-        window_ms: RMS 窗口大小（毫秒）
-        rms_threshold: 判定为静音的 RMS 能量阈值
+    用短时窗口的 RMS 能量判断静音，超过 max_silence_ms 则裁剪到该阈值。
     """
     data, sr = sf.read(audio_path)
     window_frames = int(sr * window_ms / 1000)
     max_silence_windows = int(max_silence_ms / window_ms)
 
-    # 计算每帧的 RMS 能量（用滑动窗口）
     rms = np.array([
         np.sqrt(np.mean(data[i:i+window_frames]**2))
         for i in range(0, len(data), window_frames)
     ])
 
-    # 找连续静音窗口区间
     silence_windows = []
     in_silence = False
     start = 0
@@ -119,15 +98,11 @@ def _trim_middle_silence(
     if not silence_windows:
         return audio_path
 
-    # 从后往前裁剪，避免索引偏移
     for sw_start, sw_end in reversed(silence_windows):
         if sw_end - sw_start > max_silence_windows:
-            # 需要裁剪这段静音
-            # 帧索引范围
             frame_start = sw_start * window_frames
             frame_end = min(sw_end * window_frames, len(data))
             keep_frames = max_silence_windows * window_frames
-            # 保留 max_silence_ms 的静音，裁掉多余的
             new_frame_end = frame_start + keep_frames
             data = np.concatenate([data[:frame_start], data[new_frame_end:]])
 
@@ -141,7 +116,9 @@ def _trim_middle_silence(
 
 
 def synthesize_all(
-    instructions: Dict, output_dir: str = "output/audio_segments"
+    instructions: Dict,
+    voice_bank_dir: str,
+    output_dir: str = "audio_segments",
 ) -> Dict:
     """遍历 instructions 逐条合成语音。"""
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -153,7 +130,8 @@ def synthesize_all(
     for i, inst in enumerate(instructions["instructions"]):
         text_preview = inst["text"][:30]
         print(f"[{i + 1}/{instructions['total_instructions']}] {inst['speaker']}: {text_preview}...", end=" ", flush=True)
-        result = _synthesize_one(inst, output_dir)
+
+        result = _synthesize_one(inst, voice_bank_dir, output_dir)
         results.append(result)
 
         if result["status"] == "success":
@@ -171,18 +149,29 @@ def synthesize_all(
     }
 
 
-def _synthesize_one(instruction: Dict, output_dir: str) -> Dict:
+def _synthesize_one(instruction: Dict, voice_bank_dir: str, output_dir: str) -> Dict:
     """合成单条指令。"""
-    params = instruction["tts_params"]
+    prompt_audio_path = str(Path(voice_bank_dir) / instruction["prompt_audio"])
+
+    if not Path(prompt_audio_path).exists():
+        return {
+            "segment_id": instruction["segment_id"],
+            "speaker": instruction["speaker"],
+            "audio_path": "",
+            "pause_after_ms": instruction.get("pause_after_ms", 400),
+            "elapsed_seconds": 0,
+            "status": "failed",
+            "error": f"prompt_audio not found: {prompt_audio_path}",
+        }
+
     output_path = str(Path(output_dir) / instruction["output_filename"])
 
     try:
         t0 = time.perf_counter()
         synthesize_remote(
             text=instruction["text"],
-            reference_audio_path=instruction["reference_audio"],
-            temperature=params.get("temperature", 1.5),
-            top_p=params.get("top_p", 0.5),
+            prompt_audio_path=prompt_audio_path,
+            prompt_text=instruction["prompt_text"],
             output_path=output_path,
         )
         elapsed = time.perf_counter() - t0
@@ -191,7 +180,7 @@ def _synthesize_one(instruction: Dict, output_dir: str) -> Dict:
             "segment_id": instruction["segment_id"],
             "speaker": instruction["speaker"],
             "audio_path": output_path,
-            "pause_after_ms": params.get("pause_after_ms", 400),
+            "pause_after_ms": instruction.get("pause_after_ms", 400),
             "elapsed_seconds": round(elapsed, 2),
             "status": "success",
         }
@@ -200,7 +189,7 @@ def _synthesize_one(instruction: Dict, output_dir: str) -> Dict:
             "segment_id": instruction["segment_id"],
             "speaker": instruction["speaker"],
             "audio_path": "",
-            "pause_after_ms": params.get("pause_after_ms", 400),
+            "pause_after_ms": instruction.get("pause_after_ms", 400),
             "elapsed_seconds": 0,
             "status": "failed",
             "error": str(e),
@@ -214,7 +203,7 @@ def _synthesize_one(instruction: Dict, output_dir: str) -> Dict:
 
 def stitch_audio(
     results: List[Dict],
-    output_path: str = "output/audio_final/final.wav",
+    output_path: str = "audio_final/final.wav",
     default_pause_ms: float = 400,
 ) -> Dict:
     """按 segment_id 顺序拼接所有成功生成的 wav 文件。"""
@@ -265,11 +254,12 @@ def stitch_audio(
 
 def synthesize_and_stitch(
     instructions: Dict,
-    output_dir: str = "output/audio_segments",
-    final_output: str = "output/audio_final/final.wav",
+    voice_bank_dir: str,
+    output_dir: str = "audio_segments",
+    final_output: str = "audio_final/final.wav",
 ) -> Dict:
     """合成所有片段并拼接为完整音频。"""
-    synth_result = synthesize_all(instructions, output_dir)
+    synth_result = synthesize_all(instructions, voice_bank_dir, output_dir)
     stitch_result = stitch_audio(synth_result["results"], final_output)
 
     return {

@@ -1,7 +1,4 @@
-"""故事导演层：为每个 segment 生成情绪、语速、停顿等表演指导。
-
-输出模型无关的语义标签，不直接涉及 TTS 参数或音频文件选择。
-"""
+"""IndexTTS 版故事导演层：直接输出 8 维情绪向量参数。"""
 
 import json
 import os
@@ -10,7 +7,7 @@ from typing import Dict
 
 import requests
 
-_SYSTEM_PROMPT = """你是一个有声书导演。根据故事内容、角色特征和每个文本片段的语境，生成表演指导。
+_SYSTEM_PROMPT = """你是一个有声书导演，直接为 IndexTTS 生成 8 维情绪向量参数。
 
 严格输出JSON，不要输出其他内容。结构如下：
 
@@ -30,23 +27,53 @@ _SYSTEM_PROMPT = """你是一个有声书导演。根据故事内容、角色特
   "segment_directions": [
     {
       "segment_id": 1,
-      "emotion": "情绪（平静/温馨/担忧/兴奋/急切/坚定/伤感/惊讶/愤怒/恐惧）",
-      "intensity": "强度（轻/中/强）",
-      "pace": "语速（慢/稍慢/正常/稍快/快）",
-      "delivery_note": "一句话表演指导，具体到语气和重读建议",
-      "emphasis_words": ["需要重读的词"],
-      "pause_after_ms": 500,
-      "needs_review": false
+      "emotion_vector": [0, 0, 0.1, 0, 0, 0, 0.1, 0.8],
+      "emotion_text": "用平静略带起伏的语气说",
+      "interval_silence": 500,
+      "delivery_note": "旁白叙述，节奏舒缓",
+      "emphasis_words": ["松鼠", "松果"]
     }
   ]
 }
 
-判断依据：
-- 旁白：回忆性叙述偏柔和温慢，描写性叙述偏平静，转折处要有变化
-- 对白：根据角色性格和台词内容判断情绪和语气
-- 停顿：段落结尾长停（500-800ms），段内短停（200-400ms），戏剧性时刻可到1000ms
-- emphasis_words：只选1-3个真正需要重读的词，不要多选
-- needs_review：当情绪判断不确定或文本有歧义时标记为true
+## 8 维情绪向量说明
+
+向量共 8 维，索引对应关系如下：
+- 索引 0：高兴（happiness）
+- 索引 1：愤怒（anger）
+- 索引 2：悲伤（sad）
+- 索引 3：恐惧（fear）
+- 索引 4：反感（disgust）
+- 索引 5：低落（melancholic）
+- 索引 6：惊讶（surprise）
+- 索引 7：平静/自然（calm）
+
+**约束：各维之和 ≤ 0.8**
+
+## 向量设计原则
+
+- 平静叙述：第7维（平静）0.8-1.0，其他维接近 0
+- 开心/兴奋：第0维（高兴）为主（0.3-0.6），可配合第6维（惊讶）0.1-0.2
+- 担忧：第3维（恐惧）为主（0.3-0.5），配合第5维（低落）0.1-0.2
+- 愤怒：第1维（愤怒）为主（0.3-0.6）
+- 悲伤：第2维（悲伤）为主（0.3-0.6），配合第5维（低落）0.1-0.2
+- 坚定：第7维（平静）高（0.5-0.7），少量第1维（愤怒）0.1-0.2
+- 惊讶：第6维（惊讶）为主（0.4-0.7）
+- 所有向量第7维（平静）至少保留 0.1 作为基底，避免完全非自然状态
+
+## interval_silence 设计
+
+- 段落结尾长停：500-800ms
+- 段内短停：200-400ms
+- 戏剧性时刻：800-1200ms
+- 旁白转对白过渡：300-500ms
+
+## 判断依据
+
+- 旁白：回忆性叙述偏平静柔和，描写性叙述偏平稳
+- 对白：根据角色性格和台词内容判断情绪向量
+- delivery_note：一句话表演指导
+- emphasis_words：只选 1-3 个真正需要重读的词，不要多选
 
 重要：segment_directions 必须覆盖输入的每一个 segment，不能遗漏。"""
 
@@ -56,37 +83,25 @@ def direct_story(
     characters: Dict,
     story_text: str = "",
 ) -> Dict:
-    """生成完整导演计划。
-
-    Args:
-        segments: segment_builder.build_segments() 的输出
-        characters: character_analyzer.analyze_characters() 的输出
-        story_text: 故事全文（提供给 LLM 作为上下文）
-
-    Returns:
-        包含 overall_style、characters_direction、segment_directions 的字典
-    """
+    """生成完整导演计划（IndexTTS 专用参数格式）。"""
     user_prompt = _build_user_prompt(segments, characters, story_text)
     env = _load_env()
     raw = _call_llm(_SYSTEM_PROMPT, user_prompt, env)
     directing = _parse_response(raw)
     directing = _validate_and_fill(directing, segments)
-
     return directing
 
 
 def _build_user_prompt(
     segments: Dict, characters: Dict, story_text: str
 ) -> str:
-    """构建 LLM 的 user prompt。"""
     parts = []
-
     if story_text:
         parts.append("## 故事全文\n\n" + story_text)
 
     parts.append("\n## 角色信息\n")
-    n = characters["narrator"]
-    parts.append(f"- narrator: {n['gender']}, {n['age']}, {n['timbre']}")
+    n = characters.get("narrator", {})
+    parts.append(f"- narrator: {n.get('gender', '')}, {n.get('age', '')}, {n.get('timbre', '')}")
     for c in characters.get("characters", []):
         parts.append(f"- {c['speaker']}: {c['gender']}, {c['age']}, {c['timbre']} ({c['role_type']})")
 
@@ -94,13 +109,12 @@ def _build_user_prompt(
     for seg in segments["segments"]:
         parts.append(f"[seg_{seg['segment_id']}] ({seg['speaker']}, {seg['type']}) {seg['text']}")
 
-    parts.append("\n请为以上每个片段生成表演指导，严格输出JSON。")
+    parts.append("\n请为以上每个片段生成 8 维情绪向量和表演指导，严格输出JSON。")
     return "\n".join(parts)
 
 
 def _load_env() -> Dict[str, str]:
-    """从 .env 文件加载配置。"""
-    env_path = Path(__file__).resolve().parent.parent / ".env"
+    env_path = Path(__file__).resolve().parent.parent.parent / ".env"
     config = {}
     if env_path.exists():
         for line in env_path.read_text(encoding="utf-8").splitlines():
@@ -112,7 +126,6 @@ def _load_env() -> Dict[str, str]:
 
 
 def _call_llm(system_prompt: str, user_prompt: str, env: Dict[str, str]) -> str:
-    """调用 LLM API（Anthropic Messages 格式）。"""
     base_url = env.get("LLM_BASE_URL", os.environ.get("LLM_BASE_URL", ""))
     api_key = env.get("LLM_API_KEY", os.environ.get("LLM_API_KEY", ""))
     model = env.get("LLM_MODEL", os.environ.get("LLM_MODEL", "qwen3.6-plus"))
@@ -140,7 +153,6 @@ def _call_llm(system_prompt: str, user_prompt: str, env: Dict[str, str]) -> str:
         url, headers=headers, json=payload, timeout=(10, 180), verify=False
     )
     response.raise_for_status()
-
     data = response.json()
     for block in data["content"]:
         if block.get("type") == "text":
@@ -149,19 +161,14 @@ def _call_llm(system_prompt: str, user_prompt: str, env: Dict[str, str]) -> str:
 
 
 def _parse_response(raw: str) -> Dict:
-    """解析 LLM 返回的 JSON，失败时返回简化 fallback。"""
     text = raw.strip()
-
-    # 去掉 markdown 代码块
     if "```json" in text:
         text = text.split("```json", 1)[1].split("```", 1)[0]
     elif "```" in text:
-        # 尝试去掉首尾的代码块标记
         parts = text.split("```")
         if len(parts) >= 3:
             text = parts[1]
 
-    # 去掉 LLM 在 JSON 前后的解释性文字，定位到 JSON 块
     first_brace = text.find("{")
     last_brace = text.rfind("}")
     if first_brace == -1 or last_brace == -1 or last_brace <= first_brace:
@@ -171,43 +178,31 @@ def _parse_response(raw: str) -> Dict:
     try:
         return json.loads(text.strip())
     except json.JSONDecodeError as e:
-        # 保存调试文件
-        debug_dir = Path(__file__).resolve().parent.parent / "output" / "debug"
+        debug_dir = Path(__file__).resolve().parent.parent.parent / "output" / "debug"
         debug_dir.mkdir(parents=True, exist_ok=True)
         import time
         ts = time.strftime("%Y%m%d_%H%M%S")
-        raw_path = debug_dir / f"story_director_raw_{ts}.txt"
-        clean_path = debug_dir / f"story_director_cleaned_{ts}.txt"
+        raw_path = debug_dir / f"indextts_director_raw_{ts}.txt"
+        clean_path = debug_dir / f"indextts_director_cleaned_{ts}.txt"
         raw_path.write_text(raw, encoding="utf-8")
         clean_path.write_text(text, encoding="utf-8")
-
-        # 打印失败位置附近 200 字符
         pos = e.pos
-        snippet_start = max(0, pos - 100)
-        snippet_end = min(len(text), pos + 100)
-        snippet = text[snippet_start:snippet_end]
+        snippet = text[max(0, pos - 100):min(len(text), pos + 100)]
         print(f"\n[WARN] JSON 解析失败 at pos={pos}, saved to {raw_path.name}")
         print(f"  Context: ...{snippet}...")
         print(f"  Error: {e.msg}")
         print(f"  → 返回简化 fallback plan")
-
         return _fallback_director_plan(text)
 
 
 def _fallback_director_plan(raw_text: str) -> Dict:
-    """解析完全失败时返回一个简化计划，不中断主流程。"""
     genre = "未知"
     for kw in ["寓言", "童话", "儿童故事", "历史故事", "散文", "小说", "科普"]:
         if kw in raw_text[:500]:
             genre = kw
             break
     return {
-        "overall_style": {
-            "genre": genre,
-            "tone": "中性",
-            "pace": "正常",
-            "summary": "（LLM JSON 解析失败，使用默认导演计划）",
-        },
+        "overall_style": {"genre": genre, "tone": "中性", "pace": "正常", "summary": "（LLM JSON 解析失败，使用默认导演计划）"},
         "characters_direction": {},
         "segment_directions": [],
         "_parse_failed": True,
@@ -215,20 +210,14 @@ def _fallback_director_plan(raw_text: str) -> Dict:
 
 
 def _validate_and_fill(directing: Dict, segments: Dict) -> Dict:
-    """校验 LLM 输出，补全缺失字段，确保每个 segment 都有 direction。"""
     if "overall_style" not in directing:
-        directing["overall_style"] = {
-            "genre": "未知", "tone": "中性", "pace": "适中", "summary": "",
-        }
+        directing["overall_style"] = {"genre": "未知", "tone": "中性", "pace": "适中", "summary": ""}
 
     if "characters_direction" not in directing:
         directing["characters_direction"] = {}
 
     if "narrator" not in directing["characters_direction"]:
-        directing["characters_direction"]["narrator"] = {
-            "voice_direction": "平稳自然的旁白",
-            "performance_note": "",
-        }
+        directing["characters_direction"]["narrator"] = {"voice_direction": "平稳自然的旁白", "performance_note": ""}
 
     seg_dirs = directing.get("segment_directions", [])
     dir_map = {d["segment_id"]: d for d in seg_dirs}
@@ -237,24 +226,22 @@ def _validate_and_fill(directing: Dict, segments: Dict) -> Dict:
     for seg in segments["segments"]:
         sid = seg["segment_id"]
         if sid in dir_map:
-            d = dir_map[sid]
-            d.setdefault("emotion", "平静")
-            d.setdefault("intensity", "轻")
-            d.setdefault("pace", "正常")
+            d = dict(dir_map[sid])
+            d.setdefault("emotion_vector", [0, 0, 0, 0, 0, 0, 0, 1.0])
+            d.setdefault("emotion_text", "")
+            d.setdefault("interval_silence", 400)
             d.setdefault("delivery_note", "")
             d.setdefault("emphasis_words", [])
-            d.setdefault("pause_after_ms", 400)
-            d.setdefault("needs_review", False)
+            # 校验并修正 emotion_vector
+            d["emotion_vector"] = _normalize_vector(d["emotion_vector"])
         else:
             d = {
                 "segment_id": sid,
-                "emotion": "平静",
-                "intensity": "轻",
-                "pace": "正常",
+                "emotion_vector": [0, 0, 0, 0, 0, 0, 0, 1.0],
+                "emotion_text": "",
+                "interval_silence": 400,
                 "delivery_note": "",
                 "emphasis_words": [],
-                "pause_after_ms": 400,
-                "needs_review": True,
             }
         d["speaker"] = seg["speaker"]
         d["text"] = seg["text"]
@@ -264,37 +251,21 @@ def _validate_and_fill(directing: Dict, segments: Dict) -> Dict:
     return directing
 
 
-def generate_markdown(directing: Dict) -> str:
-    """生成人类可读的 MD 报告。"""
-    lines = ["# 导演计划\n"]
-
-    style = directing.get("overall_style", {})
-    lines.append("## 整体风格")
-    lines.append(f"- 类型：{style.get('genre', '')}")
-    lines.append(f"- 基调：{style.get('tone', '')}")
-    lines.append(f"- 节奏：{style.get('pace', '')}")
-    lines.append(f"- 概述：{style.get('summary', '')}\n")
-
-    chars = directing.get("characters_direction", {})
-    if chars:
-        lines.append("## 角色表演指导\n")
-        for name, direction in chars.items():
-            lines.append(f"### {name}")
-            lines.append(f"- 声音指导：{direction.get('voice_direction', '')}")
-            lines.append(f"- 表演要点：{direction.get('performance_note', '')}\n")
-
-    seg_dirs = directing.get("segment_directions", [])
-    if seg_dirs:
-        lines.append("## 逐段表演指导\n")
-        for d in seg_dirs:
-            review_tag = " [需复核]" if d.get("needs_review") else ""
-            lines.append(f"### seg_{d['segment_id']} — {d['speaker']}{review_tag}")
-            lines.append(f"> {d['text']}")
-            lines.append(f"- 情绪：{d['emotion']}（{d['intensity']}）")
-            lines.append(f"- 语速：{d['pace']}")
-            lines.append(f"- 指导：{d['delivery_note']}")
-            if d.get("emphasis_words"):
-                lines.append(f"- 重读：{'、'.join(d['emphasis_words'])}")
-            lines.append(f"- 停顿：{d['pause_after_ms']}ms\n")
-
-    return "\n".join(lines)
+def _normalize_vector(vec: list) -> list:
+    """校验并修正 8 维情绪向量：补零/截断/缩放。"""
+    if not isinstance(vec, (list, tuple)):
+        return [0, 0, 0, 0, 0, 0, 0, 1.0]
+    # 补零或截断到 8 维
+    vec = list(vec)
+    if len(vec) < 8:
+        vec += [0] * (8 - len(vec))
+    elif len(vec) > 8:
+        vec = vec[:8]
+    # 确保第7维（平静）至少 0.1
+    if vec[7] < 0.1:
+        vec[7] = 0.1
+    total = sum(vec)
+    if total > 0.8:
+        scale = 0.8 / total
+        vec = [v * scale for v in vec]
+    return vec

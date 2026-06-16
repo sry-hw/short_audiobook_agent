@@ -1,17 +1,18 @@
 {
   "presets": {
-    "female_child_bright": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_3.wav",
-    "female_child_soft": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_6.wav",
-    "female_young_warm": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_4.wav",
-    "female_middle_aged_warm": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_11.wav",
-    "female_elderly_soft": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_6.wav",
-    "female_young_sharp": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_11.wav",
-    "male_child_bright": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_3.wav",
-    "male_young_warm": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_1.wav",
-    "male_middle_aged_deep": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_10.wav",
-    "male_middle_aged_sharp": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_1.wav",
-    "male_elderly_deep": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_10.wav",
-    "male_elderly_rough": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_10.wav"
+    "female_middle_aged_warm": "voice_present/MsceneSpeech_成熟女声.wav",
+    "female_young_bright": "voice_present/MsceneSpeech_活泼女声.wav",
+    "female_child_bright": "voice_present/MsceneSpeech_年轻调皮女声.wav",
+    "female_middle_aged_sharp": "voice_present/MsceneSpeech_刻薄女声.wav",
+    "female_young_warm": "voice_present/MsceneSpeech_女旁白1.wav",
+    "female_middle_aged_warm_narrator": "voice_present/MsceneSpeech_说书女声.wav",
+    "female_young_bright_news": "voice_present/MsceneSpeech_新闻播报女声.wav",
+    "female_middle_aged_bright_news": "voice_present/MsceneSpeech_新闻播报女声2.wav",
+    "male_middle_aged_deep": "voice_present/MsceneSpeech_低沉男旁白.wav",
+    "male_middle_aged_warm": "voice_present/MsceneSpeech_憨厚男声.wav",
+    "male_young_soft": "voice_present/MsceneSpeech_内敛男声.wav",
+    "male_young_warm": "voice_present/MsceneSpeech_青年活泼男声.wav"
   },
-  "narrator": "M:/Users/l30083418/Documents/MOSS-TTS-Nano/assets/audio/zh_4.wav"
+  "narrator": "voice_present/MsceneSpeech_女旁白1.wav",
+  "description": "使用 MsceneSpeech 音色库。narrator 默认使用女旁白1。角色音色按 gender/age/timbre 匹配。"
 }
