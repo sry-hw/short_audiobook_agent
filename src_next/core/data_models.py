@@ -5,6 +5,7 @@
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -49,9 +50,19 @@ class Segment:
     speaker : str
         说话人，默认 narrator，待 analysis 层解析后更新。
     segment_type : str
-        段类型，narration / dialogue / unknown。
+        段类型，取值：
+        - ``narration``：旁白叙述（包括被 quote_classifier 判定为非对白
+          而并回的引号内容，如强调词、书名等）。
+        - ``dialogue``：真实角色说出的对白。
+        - ``inner_thought``：心理活动（心想 / 暗想等），由 quote_classifier
+          从原 dialogue candidate 中细分出来。
+        - ``unknown``：临时占位，上游 segment_builder 切出来但未被
+          quote_classifier 处理过的 dialogue candidate 会带这个 speaker；
+          segment_type 本身很少为 unknown。
     raw_index : int
-        在原始文本中的段落索引（从 0 开始）。
+        段落位置索引（从 0 开始）。core.segment_builder 会先按段落切分、
+        再按引号切分，因此同一段落切出来的多个 Segment 会共享同一个 raw_index。
+        analysis/story_resolver 依赖这个字段按段落重组上下文送给 LLM。
     """
 
     segment_id: str
@@ -105,6 +116,11 @@ class DirectorInstruction:
 
     出现在数据流的：characters + resolved_segments → director_plan
 
+    定位：**通用语义导演层**。字段面向"人能读懂的朗读意图"，不绑定任何具体
+    TTS 后端（IndexTTS / CosyVoice / FishPro / Qwen TTS 等）。后续
+    ``core/tts_instruction_builder.py`` 会把这些通用字段翻译成各 TTS adapter
+    能消费的具体参数或 prompt。
+
     Attributes
     ----------
     segment_id : str
@@ -112,23 +128,39 @@ class DirectorInstruction:
     speaker : str
         说话人。
     emotion : str
-        情绪基调（由 LLM 生成，如 紧张 / 温柔 / 平静）。
+        情绪基调。常用值：neutral / warm / happy / excited / nostalgic /
+        sad / gentle / anxious / playful / serious / moved / surprised /
+        calm / joyful / longing 等。
+    emotion_intensity : float
+        情绪强度，0.0~1.0。0.3 以下内敛，0.5 适中，0.8 以上强烈。
     pace : float
-        语速倍率，1.0 为正常速。
+        语速倍率，0.75~1.30。0.75 很慢，1.0 正常，1.30 快。
     tone : str
-        语调描述。
+        语气描述。常用值：gentle / warm / serious / playful / calm /
+        lively / normal。
+    volume : str
+        音量。``soft`` / ``normal`` / ``strong``。
+    pitch : str
+        音高。``low`` / ``medium_low`` / ``medium`` / ``medium_high`` / ``high``。
     pause_hint : float
-        段后停顿秒数建议。
+        段后停顿秒数建议，0.2~1.0。
+    stress_words : list[str]
+        需要重读的关键词，最多 3 个，必须是原文中出现的词。
     delivery_instruction : str
-        综合朗读指导描述。
+        结合原文内容、人物、上下文的中文朗读指导。不允许使用
+        "自然对白语气" / "平稳叙述" 等空泛表达。
     """
 
     segment_id: str
     speaker: str
     emotion: str = "neutral"
+    emotion_intensity: float = 0.5
     pace: float = 1.0
     tone: str = "normal"
+    volume: str = "normal"
+    pitch: str = "medium"
     pause_hint: float = 0.0
+    stress_words: list[str] = field(default_factory=list)
     delivery_instruction: str = ""
 
 
@@ -140,7 +172,16 @@ class TTSInstruction:
     """
     TTS 合成指令：包含合成单段音频所需的全部信息。
 
-    出现在数据流的：director_plan + voicebank → tts_instructions
+    出现在数据流的：segments + characters + director_plan + voicebank → tts_instructions
+
+    定位：**模型无关的通用合成指令**。字段面向"任何 TTS 后端都能理解的
+    语义维度"，不绑定 IndexTTS / CosyVoice / FishPro / Qwen TTS 等具体后端。
+    后续 ``src_next/tts/`` 各 adapter 负责把这些通用字段翻译成具体模型参数
+    或 HTTP 请求体。
+
+    不要在本 dataclass 加入 ``indextts_speed`` / ``cosyvoice_prompt`` /
+    ``fishpro_temperature`` / ``qwen_voice_id`` 这类模型专用字段。模型专用
+    参数应该在 adapter 内部根据通用字段推断，避免 core 层耦合到某个后端。
 
     Attributes
     ----------
@@ -150,26 +191,58 @@ class TTSInstruction:
         说话人。
     text : str
         要合成的文本。
-    voice_ref : str | None
-        音色参考文件路径（由 voicebank 层填充）。
+    segment_type : str
+        段落类型（``narration`` / ``dialogue`` / ``inner_thought``）。
+        从 Segment.segment_type 拷贝；TTS adapter 可以根据它走不同分支。
+    voice_ref : str
+        音色参考文件路径（由 voicebank 层填充）。空字符串表示没拿到
+        对应 speaker 的 voice reference（已经在 metadata 里标记）。
     emotion : str
-        情绪基调（从 director_instruction 复制）。
+        情绪基调（从 DirectorInstruction 复制）。
+    emotion_intensity : float
+        情绪强度 0.0~1.0。
     pace : float
-        语速倍率。
+        语速倍率 0.75~1.30。
     tone : str
-        语调描述。
-    instruction : str
-        综合朗读指令（供 TTS adapter 参考）。
+        语气描述（gentle / warm / serious / playful / calm / lively / normal 等）。
+    volume : str
+        音量（``soft`` / ``normal`` / ``strong``）。
+    pitch : str
+        音高（``low`` / ``medium_low`` / ``medium`` / ``medium_high`` / ``high``）。
+    pause_hint : float
+        段后停顿秒数 0.2~1.0。
+    stress_words : list[str]
+        需要重读的关键词，最多 3 个。
+    delivery_instruction : str
+        综合朗读指导（结合原文内容的中文描述）。
+    output_filename : str
+        建议的音频输出文件名，格式 ``seg_001.wav``。
+    metadata : dict[str, Any]
+        调试 / 审计字段。常驻键：
+        * ``source_segment_type``：原始 segment_type（和 segment_type 字段重复，
+          留作 fallback 痕迹）。
+        * ``has_director_instruction``：本段是否拿到 LLM 产出的 director。
+        * ``has_voice_ref``：是否拿到 speaker 对应的 voice reference。
+        * ``missing_voice_ref``（仅当 has_voice_ref=False）：True。
+        * ``voice_ref_fallback``（仅当 fallback 到 narrator / 空）：标注走哪个兜底。
     """
 
     segment_id: str
     speaker: str
     text: str
-    voice_ref: str | None = None
+    segment_type: str = "narration"
+    voice_ref: str = ""
     emotion: str = "neutral"
+    emotion_intensity: float = 0.5
     pace: float = 1.0
     tone: str = "normal"
-    instruction: str = ""
+    volume: str = "normal"
+    pitch: str = "medium"
+    pause_hint: float = 0.4
+    stress_words: list[str] = field(default_factory=list)
+    delivery_instruction: str = ""
+    output_filename: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -283,6 +356,12 @@ class PipelineResult:
         中间产物路径映射，如 {"segments": "json/segments.json", ...}
     error : str
         错误信息（成功时为空字符串）。
+    pipeline_summary : dict[str, Any]
+        真实 pipeline 的完整耗时 / RTF / 阶段明细。mock pipeline 留空 dict。
+        真实 pipeline 填入 total_time_sec / analysis_time_sec / voicebank_time_sec /
+        tts_time_sec / merge_time_sec / final_audio_duration_sec / rtf /
+        output_dir / final_audio_path / stages[]（每项含 stage/status/elapsed_sec/
+        mode/output）。详见 src_next/core/audiobook_pipeline.py。
     """
 
     story_name: str
@@ -292,3 +371,4 @@ class PipelineResult:
     stage_timings: dict[str, float] = field(default_factory=dict)
     artifacts: dict[str, str] = field(default_factory=dict)
     error: str = ""
+    pipeline_summary: dict[str, Any] = field(default_factory=dict)

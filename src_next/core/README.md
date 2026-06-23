@@ -43,16 +43,17 @@
 core/
 ├── data_models.py             # 核心数据结构定义
 ├── audiobook_pipeline.py      # 主流程编排
-├── segment_builder.py         # txt → segments
-├── tts_instruction_builder.py # segments + characters + director plan → tts instructions
+├── segment_builder.py         # txt → segments（段落切 + 引号切，两级）
+├── tts_instruction_builder.py # segments + director_plan + voicebank → 通用 TTSInstruction
 ├── audio_merger.py            # audio segments → final audio
-└── logging_utils.py           # STAGE 级日志、耗时统计
+├── logging_utils.py           # STAGE 级日志、耗时统计
+└── test_tts_instruction_builder.py  # builder 自检（手写输入，不依赖 LLM）
 ```
 
 ## 六、和其他层的交互
 
 * **被 `app/` 调用**：接收 txt、profile、adapters。
-* **调用 `analysis/`**：story_resolver / character_analyzer / story_director。
+* **调用 `analysis/`**：quote_classifier / story_resolver / character_analyzer / story_director。
 * **调用 `llm/`**：通过统一接口拿 text / json（不直接发 HTTP）。
 * **调用 `voicebank/`**：为角色准备音色参考。
 * **调用 `tts/`**：按 tts instructions 合成音频。
@@ -67,8 +68,8 @@ core/
 core/
 ├── __init__.py
 ├── data_models.py             # ✅ 9 个 dataclass 已定义
-├── segment_builder.py         # ✅ build_segments() 已实现（按自然段切分）
-├── tts_instruction_builder.py # ✅ build_tts_instructions() 已实现（简单匹配）
+├── segment_builder.py         # ✅ build_segments() 已实现（段落切 + 引号切，两级）
+├── tts_instruction_builder.py # ✅ build_tts_instructions() 已实现（Segment + Director + Voicebank → 通用 TTSInstruction）
 ├── audio_merger.py            # ✅ merge_audio_segments() placeholder
 ├── logging_utils.py           # ✅ log_stage_start/done/item
 └── audiobook_pipeline.py      # ✅ run_mock_core_pipeline() 主流程

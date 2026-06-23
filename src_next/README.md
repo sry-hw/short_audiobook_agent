@@ -50,7 +50,7 @@ core/                           ← 核心业务编排层
 |------|---------|------------|-----------|
 | `app/` | 启动入口、读取配置 | txt 路径 + profile 名 → 启动 pipeline | 具体模型的请求格式 |
 | `core/` | 组织流程、保存中间产物、统计耗时 | 原始文本 + adapters → 有声书成品 + JSON | Gemma4 / CosyVoice 调用细节 |
-| `analysis/` | 对话者识别、角色抽取、导演计划 | segments + llm → resolved / characters / director plan | TTS 部署地址、音色克隆细节 |
+| `analysis/` | 对话者识别、角色抽取、导演计划 | segments + llm → resolved / characters / director plan | TTS 部署地址、音色克隆细节、**TTS 后端专用参数**（director_plan 是通用语义层，不写 IndexTTS / CosyVoice 专用字段） |
 | `llm/` | 统一 LLM 接口、多后端切换、JSON 解析重试 | prompt → text / json | 故事业务、TTS 是什么 |
 | `tts/` | 合成音频、多后端切换 | tts instructions + voicebank → audio segments | 角色分析逻辑、LLM 调用细节 |
 | `voicebank/` | 准备角色音色参考、多后端切换 | character profiles → voice reference | 正文音频合成、故事分析 |
@@ -371,42 +371,53 @@ llm/parallel.py
 
 ### 主要职责
 
-* 接收 TTS 指令。
-* 调用具体 TTS 模型或服务。
-* 生成每个 segment 的音频。
-* 拼接或返回音频片段。
-* 支持 CosyVoice、IndexTTS、FishPro、本地 TTS 等后端切换。
+* 接收通用 `TTSInstruction`（模型无关，由 `core/tts_instruction_builder` 产出）。
+* 调用具体 TTS 模型或服务（IndexTTS / CosyVoice / FishPro / Qwen TTS / mock）。
+* 生成每个 segment 的 wav 文件。
+* 单条失败隔离（失败 instruction 写到 `AudioSegmentResult.error`，不阻断其他条）。
+* 缓存（已存在 wav 可复用）+ dry_run 模式。
 
 ### 典型文件
 
 ```text
-tts/base.py
-tts/mock_tts.py
-tts/cosyvoice_adapter.py
-tts/indextts_adapter.py
-tts/fishpro_adapter.py
-tts/local_tts.py
+tts/base.py                  # TTSError + BaseTTSAdapter(synthesize)
+tts/mock_tts.py              # ✅ 离线占位
+tts/indextts_adapter.py      # ✅ subprocess 调外部 IndexTTS CLI
+tts/cosyvoice_adapter.py     # 🚧 占位
+tts/fishpro_adapter.py       # 🚧 占位
+tts/qwen_tts_adapter.py      # 🚧 占位
+tts/registry.py              # create_tts_adapter(backend, **config)
+tts/test_tts_from_artifacts.py  # 不重跑 analysis 的 smoke test
 ```
+
+详细接口约定、IndexTTS 真实参数、测试方法请见 [`tts/README.md`](tts/README.md)。
 
 ### 输入
 
-* tts instructions。
-* voicebank 结果。
-* 输出目录。
-* TTS profile 配置。
+* `list[TTSInstruction]`（通用合成指令）。
+* `VoicebankResult`（speaker → voice_ref 映射，用于 fallback 和审计）。
+* `output_dir`（adapter 在其下创建 `output_subdir` 放 wav + log）。
+* `dry_run` / `limit` / `timeout_per_seg` 等 kwargs。
 
 ### 输出
 
-* audio segments。
-* final audio。
-* TTS 阶段耗时。
+* `list[AudioSegmentResult]`（与 instructions 一一对应，按顺序）。
+* per-segment log + adapter 配置快照（落到 `output_dir/<output_subdir>/`）。
 
 ### 不应该负责
 
-* 不判断角色性格。
-* 不生成导演计划。
-* 不调用 LLM。
-* 不负责 voicebank 生成逻辑。
+* 不切分文本（segment_builder）。
+* 不识别说话人（story_resolver）。
+* 不抽取角色 / 不生成导演计划（character_analyzer / story_director）。
+* 不准备音色参考（voicebank）。
+* 不拼接多段 wav（audio_merger）。
+
+### 关于 IndexTTS 的特殊性
+
+IndexTTS 是纯 zero-shot voice cloning，**不支持** pace / emotion / volume /
+pitch / stress_words / delivery_instruction 等风格参数。这些通用字段在
+`TTSInstruction` 里保留是为了让 CosyVoice2 / Qwen3-TTS 等支持风格控制的后端
+能用；IndexTTS adapter 会把它们写到 per-segment log 留档，但**不影响合成结果**。
 
 ## 6. voicebank 层：音色克隆 / 音色参考适配层
 
@@ -532,46 +543,58 @@ utils/audio_utils.py
         │  ①  core/segment_builder.py
         ▼
    ┌──────────────────┐
-   │    segments      │  分段（段落 + 对话）
+   │    segments      │  分段（段落 + 引号切，所有引号先变 dialogue candidate）
    └────┬─────────────┘
-        │  ②  analysis/story_resolver.py  + llm
+        │  ②  analysis/quote_classifier.py  + llm
         ▼
    ┌──────────────────────┐
-   │  resolved segments   │  识别每段是谁在说
+   │  merged segments     │  非对白引号（书名/强调词）并回 narration
    └────┬─────────────────┘
-        │  ③  analysis/character_analyzer.py  + llm
+        │  ③  analysis/story_resolver.py  + llm
+        ▼
+   ┌──────────────────────┐
+   │  resolved segments   │  识别每段是谁在说（1:1）
+   └────┬─────────────────┘
+        │  ④  analysis/character_analyzer.py  + llm
         ▼
    ┌──────────────────────┐
    │  character profiles  │  角色档案（年龄 / 性格 / 音色特征）
    └────┬─────────────────┘
-        │  ④  voicebank/  (为每个角色准备音色参考)
+        │  ⑤  voicebank/  (为每个角色准备音色参考)
         ▼
    ┌──────────┐
    │ voicebank│  每个角色对应的音色参考
    └────┬─────┘
-        │  ⑤  analysis/story_director.py  + llm
+        │  ⑥  analysis/story_director.py  + llm
         ▼
    ┌───────────────┐
-   │ director plan │  导演计划（情绪 / 节奏 / 重音）
+   │ director plan │  通用语义导演层（emotion / intensity / pace / tone /
+   │               │                 volume / pitch / pause_hint / stress_words
+   │               │                 / delivery_instruction，不绑 TTS 后端）
    └────┬──────────┘
-        │  ⑥  core/tts_instruction_builder.py
+        │  ⑦  core/tts_instruction_builder.py
         ▼
    ┌───────────────────┐
-   │  tts instructions │  合成指令（文本 + 音色 + 情绪）
+   │  tts instructions │  **模型无关的通用合成指令**（text + voice_ref +
+   │                   │   emotion + intensity + pace + tone + volume +
+   │                   │   pitch + pause_hint + stress_words +
+   │                   │   delivery_instruction + output_filename + metadata）
+   │                   │   不写 IndexTTS / CosyVoice / FishPro / Qwen TTS
+   │                   │   专用字段；各 TTS adapter 负责翻译。
    └────┬──────────────┘
-        │  ⑦  tts/  (按指令合成音频)
+        │  ⑧  tts/  (按指令合成音频)
         ▼
    ┌────────────────┐
    │ audio segments │  每段对应的音频片段
    └────┬───────────┘
-        │  ⑧  core/audio_merger.py
+        │  ⑨  core/audio_merger.py
         ▼
    ┌──────────────┐
    │   最终音频   │  成品有声书
    └──────────────┘
 ```
 
-**一眼看懂**：txt 经过 8 个阶段变成有声书，**①④⑥⑧ 在 `core/`**，**②③⑤ 在 `analysis/`**，**⑦ 在 `tts/`**；其中 ②③⑤ 都需要调用 LLM，④⑦ 都依赖 voicebank 结果。每个中间产物都应能保存成 JSON 或文件，方便调试和复现。
+**一眼看懂**：txt 经过 9 个阶段变成有声书，**①⑦⑨ 在 `core/`**，**②③④⑥ 在 `analysis/`**，**⑧ 在 `tts/`**；其中 ②③④⑥ 都需要调用 LLM，⑤⑧ 都依赖 voicebank 结果。每个中间产物都应能保存成 JSON 或文件，方便调试和复现。
 
 ### 2. 详细步骤说明
 
@@ -586,30 +609,33 @@ utils/audio_utils.py
    创建 pipeline，上下文和输出目录
 
 4. core/segment_builder.py
-   原始 txt → segments
+   原始 txt → segments（段落 + 引号切，所有引号先变 dialogue candidate）
 
-5. analysis/story_resolver.py
-   segments + llm_client → speaker-resolved segments
+5. analysis/quote_classifier.py
+   segments + llm_client → merged segments（非对白引号并回 narration）
 
-6. analysis/character_analyzer.py
+6. analysis/story_resolver.py
+   merged segments + llm_client → speaker-resolved segments（1:1）
+
+7. analysis/character_analyzer.py
    resolved segments + llm_client → character profiles
 
-7. voicebank adapter
+8. voicebank adapter
    character profiles → voicebank result
 
-8. analysis/story_director.py
+9. analysis/story_director.py
    resolved segments + character profiles + llm_client → director plan
 
-9. core/tts_instruction_builder.py
-   segments + characters + director plan + voicebank result → tts instructions
+10. core/tts_instruction_builder.py
+    segments + characters + director plan + voicebank result → tts instructions
 
-10. tts adapter
+11. tts adapter
     tts instructions + voicebank result → audio segments
 
-11. core/audio_merger.py
+12. core/audio_merger.py
     audio segments → final audio
 
-12. core/audiobook_pipeline.py
+13. core/audiobook_pipeline.py
     汇总 final_audio、timings、RTF、run_summary
 ```
 
@@ -621,15 +647,19 @@ utils/audio_utils.py
 output-src-next/<story_name>/
 ├── input.txt
 ├── json/
-│   ├── segments.json
+│   ├── segments_raw.json              ← build_segments 后（含所有 dialogue candidate）
+│   ├── quote_classifications.json     ← quote_classifier 的 LLM 判断结果
+│   ├── segments_after_quote_merge.json ← 非对白引号并回 narration 后
 │   ├── resolved_segments.json
 │   ├── characters.json
+│   ├── voicebank_result.json
 │   ├── director_plan.json
 │   ├── tts_instructions.json
+│   ├── audio_segment_results.json     ← tts adapter 产出（每段合成结果）
 │   └── run_summary.json
-├── voicebank/
-├── audio_segments/
-└── audio_final/
+├── voicebank/                          ← 每 speaker 一个 wav + log
+├── audio_segments/                     ← tts adapter 落盘的每段 wav + log
+└── audio_final/                        ← 拼接后的最终 wav
 ```
 
 ## 七、Mock 链路的意义

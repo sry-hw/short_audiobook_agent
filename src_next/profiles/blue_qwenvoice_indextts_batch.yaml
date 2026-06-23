@@ -1,0 +1,86 @@
+# blue_qwenvoice_indextts_batch.yaml
+#
+# 完整 pipeline profile（蓝区）：
+#   region    = blue
+#   voicebank = qwenvoice   (Qwen3-TTS VoiceDesign)
+#   tts       = indextts    (IndexTTS, batch wrapper)
+#   mode      = batch       (模型只加载一次批量合成)
+#
+# 配置块来源：
+#   voicebank ← 复用 blue_qwen_voicegenerator.yaml 中已跑通的路径
+#   tts       ← 复用 blue_indextts.yaml 中已跑通的 Windows 原生 env
+#   llm       ← QwenHTTPClient 默认从环境变量读取，这里只声明用的 env 名
+#
+# 5 个必填块：llm / voicebank / tts / output / pipeline
+
+name: blue_qwenvoice_indextts_batch
+region: blue
+description: |
+  蓝区完整链路：Qwen3.6-plus LLM + Qwen VoiceGenerator voicebank + IndexTTS batch。
+  voicebank / tts 配置均来自已经跑通的单模块 profile。
+
+# ── llm：蓝区默认 qwen3.6-plus ─────────────────────────────────────────
+# QwenHTTPClient 会按 *_env 字段指定的环境变量名读取实际值，
+# 不在 profile 里硬编码 API key / base_url。
+llm:
+  backend: qwen_http
+  model: qwen3.6-plus
+  base_url_env: QWEN_BASE_URL
+  api_key_env: QWEN_API_KEY
+  timeout: 300
+
+# ── voicebank：复用 blue_qwen_voicegenerator.yaml 已验证配置 ──────────
+# 路径与单模块 profile 完全一致；venv 是 WSL 创建的，必须走 wsl 包装。
+voicebank:
+  backend: qwen_voicegenerator
+  generator_root: "F:/akoasm/short_audiobook_agent/src_next/voicebank/scripts"
+  script_path: "run_voicedesign_srcnext.py"
+  model_path: "F:/akoasm/TTS-test/models/qwen3-tts-voicedesign"
+  preset_path: ""
+  python_executable:
+    - "wsl"
+    - "/mnt/f/akoasm/TTS-test/envs/qwen3-customvoice/bin/python"
+  output_subdir: "voicebank"
+  extra_args:
+    language: "Chinese"
+    device: "cuda:0"
+    attn_implementation: "sdpa"
+    reference_text: "你好，欢迎使用语音设计功能，这是一个测试句子。"
+    timeout_per_char: 300
+
+# ── tts：复用 blue_indextts.yaml 已验证配置 ───────────────────────────
+# Windows 原生 venv，不走 WSL；batch_wrapper_path 启用 batch 模式。
+tts:
+  backend: indextts
+  engine_root: "F:/akoasm/TTS-test/engines/indextts"
+  batch_wrapper_path: "F:/akoasm/short_audiobook_agent/src_next/tts/scripts/run_indextts_batch.py"
+  python_executable: "F:/akoasm/venv-indextts/python.exe"
+  output_subdir: "audio_segments"
+  extra_args:
+    device: "cuda:0"
+    # invoke_mode 字段只用于人工识别（adapter 实际以 batch_wrapper_path
+    # 是否为空判断 single / batch）；保留是为了让 README / 文档能直接读出意图。
+    invoke_mode: "batch"
+
+# ── output：完整 pipeline 默认输出根目录 ──────────────────────────────
+output:
+  root: "output-src-next-pipeline"
+
+# ── pipeline：流程开关 ────────────────────────────────────────────────
+pipeline:
+  # 把每一步中间产物（segments / characters / voicebank_result /
+  # director_plan / tts_instructions / audio_segment_results）落到
+  # <output.root>/<story_name>/json/，方便事后排错和断点续跑。
+  save_intermediate_json: true
+  # 复用已存在的产物（voicebank wav / audio_segments wav），跳过重复生成。
+  # false = 每次都重新生成（适合调试）；true = 默认生产模式。
+  reuse_existing: false
+  # 单段 TTS 失败时是否中断整条 pipeline。
+  # false = 该段标 success=False 继续；true = 抛异常退出。
+  stop_on_tts_error: false
+
+notes:
+  - "voicebank 块路径来自 blue_qwen_voicegenerator.yaml，已经过 analysis smoke 验证。"
+  - "tts 块 env 来自 blue_indextts.yaml，已经过 17 段 batch 实测。"
+  - "llm 走 QwenHTTPClient，从 .env 读 QWEN_BASE_URL / QWEN_API_KEY。"
+  - "切换 backend 组合只换 profile，不改 adapter / pipeline 代码。"

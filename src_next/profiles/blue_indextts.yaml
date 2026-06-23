@@ -1,0 +1,58 @@
+profile_name: blue_indextts
+
+# IndexTTS 后端 profile（蓝区本地部署）。
+# adapter 代码：src_next/tts/indextts_adapter.py
+#
+# 复用现成 venv：F:/akoasm/venv-indextts/python.exe（Python 3.10 + torch 2.1.2+cu121
+# + indextts editable install）。该 venv 已经在
+#   F:/akoasm/TTS-test/engines/indextts/tests/smoke_install_test.py
+# 跑通，所以这里直接 Windows 原生调用，不走 WSL。
+#
+# adapter 支持两种模式：
+#   - single（默认）：每条 instruction 跑一次 subprocess，模型加载 N 次（慢）
+#   - batch：batch_wrapper_path 配置时启用，一次 subprocess 跑完整批，
+#     模型只加载一次（推荐）
+
+tts:
+  backend: indextts
+
+  # IndexTTS 仓库根目录（cfg / model_dir 默认从这里相对找 checkpoints/）
+  engine_root: "F:/akoasm/TTS-test/engines/indextts"
+
+  # script_path 不配置 → adapter 默认走 "python -m indextts.cli"（single 模式入口）。
+  # script_path: ""
+
+  # batch_wrapper_path：开启 batch 模式。指向 src_next 维护的 wrapper：
+  #   wrapper 启动时加载一次模型，从 batch_input.json 读 tasks[]，逐条合成，
+  #   写 batch_summary.json。
+  # 不配置 → 走 single 模式。
+  batch_wrapper_path: "F:/akoasm/short_audiobook_agent/src_next/tts/scripts/run_indextts_batch.py"
+
+  # model_path / config_path 不配置 → 让 wrapper / CLI 自己用默认值
+  # （相对 engine_root 的 "checkpoints/" 和 "checkpoints/config.yaml"）。
+  # model_path: "F:/akoasm/TTS-test/engines/indextts/checkpoints"
+  # config_path: "F:/akoasm/TTS-test/engines/indextts/checkpoints/config.yaml"
+
+  # 复用现成 conda env（Windows 原生调用，不走 WSL）
+  # 单字符串（非 list）→ adapter 视为直接 python，不做 /mnt/f/ 路径转换
+  python_executable: "F:/akoasm/venv-indextts/python.exe"
+
+  # 分段 wav 落盘子目录（在 artifact_dir 下）
+  output_subdir: "audio_segments"
+
+  # 透传参数
+  extra_args:
+    device: "cuda:0"
+    # disable_fp16: false    # 默认 fp16=True；CPU 跑时建议设 true 关掉
+    # single 模式超时（每条）
+    # timeout_per_seg: 600
+    # batch 模式超时（模型加载 + 每条 inference 分别有默认值）
+    # batch_model_load_timeout: 600
+    # batch_timeout_per_seg: 120
+
+notes:
+  - "venv-indextts 是 Windows 原生 conda env（Python 3.10），不走 WSL。"
+  - "batch 模式：模型只加载一次，N 条 instruction 共享一次加载，适合全量合成。"
+  - "single 模式：每条单独 subprocess，便于按段排错；慢（每条加载一次模型）。"
+  - "切换 single / batch：注释 / 启用 batch_wrapper_path 即可，不改 adapter 代码。"
+  - "IndexTTS 不支持风格参数；通用字段写到 log 留档。"
