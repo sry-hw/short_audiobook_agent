@@ -23,12 +23,15 @@ CosyVoice3 比 IndexTTS 表达力更强：自然语言指令可以控制方言 /
 from __future__ import annotations
 
 import base64
+import io
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import requests
+import soundfile as sf
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
@@ -256,7 +259,9 @@ class CosyVoiceHTTPAdapter(BaseTTSAdapter):
                     error=f"server returned empty/invalid wav ({len(wav_bytes)} bytes); see {log_path.name}",
                 )
 
-            output_wav.write_bytes(wav_bytes)
+            # CosyVoice3 服务器返回 IEEE float wav（format=3），audio_merger 用
+            # stdlib wave 模块只支持 PCM format=1，统一转成 PCM_16 再落盘。
+            self._save_wav_pcm16(wav_bytes, output_wav)
             return AudioSegmentResult(
                 segment_id=inst.segment_id, speaker=inst.speaker,
                 audio_path=str(output_wav), success=True, error="",
@@ -267,6 +272,19 @@ class CosyVoiceHTTPAdapter(BaseTTSAdapter):
                 audio_path=None, success=False,
                 error=f"{type(err).__name__}: {err}",
             )
+
+    def _save_wav_pcm16(self, wav_bytes: bytes, output_path: Path) -> None:
+        """把 HTTP 返回的 wav 字节流统一保存为 PCM int16 格式。
+
+        CosyVoice3 默认返回 IEEE float（WAVE_FORMAT_IEEE_FLOAT, format=3）；
+        audio_merger 用 stdlib wave 模块只支持 PCM format=1，读 float wav
+        会抛 'unknown format: 3'。无论原格式是 float 还是 PCM，转换后都得到
+        统一的 PCM_16 wav（int16 → float → int16 量化误差近似为 0）。
+        """
+        audio, sr = sf.read(io.BytesIO(wav_bytes), format='WAV', always_2d=False)
+        audio = np.clip(audio, -1.0, 1.0)
+        int16_audio = (audio * 32767).astype(np.int16)
+        sf.write(str(output_path), int16_audio, sr, format='WAV', subtype='PCM_16')
 
     # ── 内部工具 ─────────────────────────────────────────────────────
 
