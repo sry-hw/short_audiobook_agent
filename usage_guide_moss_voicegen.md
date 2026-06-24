@@ -2,7 +2,7 @@
 
 ## 服务信息
 
-- **服务地址**: `http://10.154.39.97:8003`
+- **服务地址**: `http://10.50.121.102:8003`
 - **模型**: MOSS-VoiceGenerator (OpenMOSS)
 - **采样率**: 24000 Hz
 - **功能**: 通过自然语言文本描述生成指定音色的语音（无需参考音频）
@@ -52,7 +52,7 @@ pkill -f api_server_voicegen
 ### 1. 健康检查
 
 ```bash
-curl --noproxy '*' http://10.154.39.97:8003/health
+curl --noproxy '*' http://10.50.121.102:8003/health
 ```
 
 **响应示例**:
@@ -63,7 +63,7 @@ curl --noproxy '*' http://10.154.39.97:8003/health
 ### 2. 配置信息
 
 ```bash
-curl --noproxy '*' http://10.154.39.97:8003/v1/voicegen/config
+curl --noproxy '*' http://10.50.121.102:8003/v1/voicegen/config
 ```
 
 **响应示例**:
@@ -74,7 +74,7 @@ curl --noproxy '*' http://10.154.39.97:8003/v1/voicegen/config
 ### 3. 语音生成
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8003/v1/voicegen/generate \
   -H "Content-Type: application/json" \
   -d '{"text":"要合成的文本","instruction":"声音风格描述"}' \
   -o output.wav
@@ -109,7 +109,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
 ### 1. 老年声音
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8003/v1/voicegen/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "哎呀，我的老腰啊，这年纪大了就是不行了。",
@@ -121,7 +121,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
 ### 2. 美食主持人
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8003/v1/voicegen/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "亲爱的观众们，今天我要为大家做一道传说中的龙须面，这道面条细如发丝，需要极其精湛的手艺才能制作成功。",
@@ -133,7 +133,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
 ### 3. 酒吧老板（英文）
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8003/v1/voicegen/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Hey there, stranger! What brings you to our humble town? Looking for a good drink or a tall tale?",
@@ -145,7 +145,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
 ### 4. 中性发音练习（英文）
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8003/v1/voicegen/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "The quick brown fox jumps over the lazy dog.",
@@ -157,7 +157,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
 ### 5. 开心语气
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8003/v1/voicegen/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "太棒了！我们的项目终于完成了！大家辛苦了！",
@@ -169,7 +169,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
 ### 6. 悲伤语气
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8003/v1/voicegen/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "一切都结束了，我们再也回不去了。",
@@ -181,7 +181,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
 ### 7. 生气语气
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8003/v1/voicegen/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "你怎么又做错了！说了多少遍都记不住！",
@@ -193,7 +193,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
 ### 8. 播音员
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8003/v1/voicegen/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "各位观众晚上好，这里是新闻联播节目。",
@@ -211,7 +211,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8003/v1/voicegen/generate \
 ```python
 import requests
 
-url = "http://10.154.39.97:8003/v1/voicegen/generate"
+url = "http://10.50.121.102:8003/v1/voicegen/generate"
 
 data = {
     "text": "欢迎使用 MOSS-VoiceGenerator 语音合成系统。",
@@ -235,7 +235,7 @@ import sys
 sys.path.append("/data3/c00657214/tts_project")
 from clients.voicegen_client import VoiceGenClient
 
-client = VoiceGenClient(base_url="http://10.154.39.97:8003")
+client = VoiceGenClient(base_url="http://10.50.121.102:8003")
 
 # 检查服务状态
 if not client.health_check():

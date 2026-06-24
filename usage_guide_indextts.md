@@ -15,7 +15,7 @@ IndexTTS-2 是新一代情感表达和时长可控的零样本 TTS 模型（Bili
 
 | 项目 | 值 |
 |------|-----|
-| **服务地址** | `http://10.154.39.97:8009` |
+| **服务地址** | `http://10.50.121.102:8009` |
 | **模型** | IndexTTS-2 |
 | **采样率** | 22050 Hz |
 | **显存需求** | ~12GB |
@@ -42,7 +42,7 @@ pkill -f api_server_indextts_8009
 ### 1. 健康检查
 
 ```bash
-curl http://10.154.39.97:8009/health
+curl http://10.50.121.102:8009/health
 ```
 
 **响应示例**:
@@ -53,13 +53,13 @@ curl http://10.154.39.97:8009/health
 ### 2. 模型配置
 
 ```bash
-curl http://10.154.39.97:8009/v1/tts/config
+curl http://10.50.121.102:8009/v1/tts/config
 ```
 
 ### 3. 语音合成
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"要合成的文本"}' \
   -o output.wav
@@ -124,7 +124,7 @@ with open("/path/to/voice.wav", "rb") as f:
     audio_b64 = base64.b64encode(f.read()).decode("utf-8")
 
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "你好，欢迎使用IndexTTS-2语音合成系统。",
         "reference_audio_base64": audio_b64
@@ -140,7 +140,7 @@ print("音频已生成: output.wav")
 
 使用 curl：
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"你好，欢迎使用IndexTTS-2语音合成系统。","reference_audio_base64":"<base64字符串>"}' \
   -o output.wav
@@ -169,7 +169,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
 ```python
 # 悲伤的情感
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "对不起嘛！我的记性真的不太好，和你在一起的事情，我都会努力记住的。",
         "reference_audio_base64": "<base64_音频数据>",
@@ -180,7 +180,7 @@ response = requests.post(
 
 # 惊恐的情感
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "快躲起来！是他要来了！他要来抓我们了！",
         "reference_audio_base64": "<base64_音频数据>",
@@ -191,7 +191,7 @@ response = requests.post(
 
 # 开心的情感
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "今天天气真不错，心情特别愉快！",
         "reference_audio_base64": "<base64_音频数据>",
@@ -203,13 +203,13 @@ response = requests.post(
 使用 curl：
 ```bash
 # 悲伤
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"这个消息太让人难过了。","reference_audio_base64":"<base64字符串>","emotion_vector":[0,0,0.8,0,0,0,0,0]}' \
   -o sad.wav
 
 # 开心
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"今天天气真不错！","reference_audio_base64":"<base64字符串>","emotion_vector":[0.8,0,0,0,0,0,0,0.2]}' \
   -o happy.wav
@@ -223,7 +223,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
 
 ```python
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "酒楼丧尽天良，开始借机竞拍房间。",
         "reference_audio_base64": "<base64_音色音频>",       # 音色参考
@@ -235,7 +235,7 @@ response = requests.post(
 
 使用 curl：
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"酒楼丧尽天良，开始借机竞拍房间。","reference_audio_base64":"<base64_音色音频>","emotion_audio_base64":"<base64_情感音频>","emotion_alpha":0.9}' \
   -o emotion_clone.wav
@@ -254,7 +254,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
 
 ```python
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "快躲起来！是他要来了！",
         "reference_audio_base64": "<base64_音频数据>",
@@ -266,7 +266,7 @@ response = requests.post(
 
 使用 curl：
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"快躲起来！是他要来了！","reference_audio_base64":"<base64字符串>","emotion_text":"你吓死我了！你是鬼吗？","emo_alpha":0.6}' \
   -o text_emotion.wav
@@ -287,7 +287,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
 
 ```python
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "之前你做DE5很好，所以这一次也DEI3做DE2很好才XING2。",
         "reference_audio_base64": "<base64_音频数据>"
@@ -297,7 +297,7 @@ response = requests.post(
 
 使用 curl：
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"之前你做DE5很好，所以这一次也DEI3做DE2很好才XING2。","reference_audio_base64":"<base64字符串>"}' \
   -o pinyin.wav
@@ -313,7 +313,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
 
 ```python
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "这是一个带有随机变化的语音合成。",
         "reference_audio_base64": "<base64_音频数据>",
@@ -325,7 +325,7 @@ response = requests.post(
 
 使用 curl：
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"这是一个带有随机变化的语音合成。","reference_audio_base64":"<base64字符串>","use_random":true,"emotion_vector":[0.5,0,0,0,0,0,0.3,0.2]}' \
   -o random.wav
@@ -340,7 +340,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
 ```python
 # 高质量（更慢）
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "高质量语音合成示例。",
         "reference_audio_base64": "<base64_音频数据>",
@@ -354,7 +354,7 @@ response = requests.post(
 
 # 快速（质量略低）
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "快速语音合成示例。",
         "reference_audio_base64": "<base64_音频数据>",
@@ -369,7 +369,7 @@ response = requests.post(
 
 使用 curl：
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"高质量语音合成示例。","reference_audio_base64":"<base64字符串>","temperature":0.7,"top_p":0.9,"top_k":50,"num_beams":5,"repetition_penalty":8.0}' \
   -o high_quality.wav
@@ -391,7 +391,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
 ```python
 # 短语音
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "短句。",
         "reference_audio_base64": "<base64_音频数据>",
@@ -401,7 +401,7 @@ response = requests.post(
 
 # 长语音
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "这是一段很长的语音内容。",
         "reference_audio_base64": "<base64_音频数据>",
@@ -414,13 +414,13 @@ response = requests.post(
 使用 curl：
 ```bash
 # 短语音
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"短句。","reference_audio_base64":"<base64字符串>","max_mel_tokens":500}' \
   -o short.wav
 
 # 长语音
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"这是一段很长的语音内容。","reference_audio_base64":"<base64字符串>","max_mel_tokens":3000,"max_text_tokens":100}' \
   -o long.wav
@@ -434,7 +434,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
 
 ```python
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "第一段文本。第二段文本。第三段文本。",
         "reference_audio_base64": "<base64_音频数据>",
@@ -445,7 +445,7 @@ response = requests.post(
 
 使用 curl：
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"第一段文本。第二段文本。","reference_audio_base64":"<base64字符串>","interval_silence":500}' \
   -o with_pause.wav
@@ -457,7 +457,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
 
 ```python
 response = requests.post(
-    "http://10.154.39.97:8009/v1/tts/synthesize",
+    "http://10.50.121.102:8009/v1/tts/synthesize",
     json={
         "text": "Hello, this is a voice synthesis test using IndexTTS2.",
         "reference_audio_base64": "<base64_音频数据>"
@@ -467,7 +467,7 @@ response = requests.post(
 
 使用 curl：
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8009/v1/tts/synthesize \
+curl --noproxy '*' -X POST http://10.50.121.102:8009/v1/tts/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello, this is a voice synthesis test using IndexTTS2.","reference_audio_base64":"<base64字符串>"}' \
   -o english.wav

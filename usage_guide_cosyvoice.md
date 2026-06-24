@@ -2,7 +2,7 @@
 
 ## 服务信息
 
-- **服务地址**: `http://10.154.39.97:8005`
+- **服务地址**: `http://10.50.121.102:8005`
 - **模型**: Fun-CosyVoice3-0.5B-2512
 - **功能**: 零样本语音克隆 + 自然语言指令控制
 
@@ -30,7 +30,7 @@ pkill -f api_server_cosyvoice
 ### 1. 健康检查
 
 ```bash
-curl --noproxy '*' http://10.154.39.97:8005/health
+curl --noproxy '*' http://10.50.121.102:8005/health
 ```
 
 **响应示例**:
@@ -41,7 +41,7 @@ curl --noproxy '*' http://10.154.39.97:8005/health
 ### 2. 配置信息
 
 ```bash
-curl --noproxy '*' http://10.154.39.97:8005/v1/cosyvoice/config
+curl --noproxy '*' http://10.50.121.102:8005/v1/cosyvoice/config
 ```
 
 **响应示例**:
@@ -52,7 +52,7 @@ curl --noproxy '*' http://10.154.39.97:8005/v1/cosyvoice/config
 ### 3. 语音生成
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8005/v1/cosyvoice/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8005/v1/cosyvoice/generate \
   -H "Content-Type: application/json" \
   -d '{"text":"文本","prompt_text":"指令.<|endofprompt|>参考音频转写","prompt_audio":"base64编码的音频","mode":"zero_shot","stream":false}' \
   -o output.wav
@@ -173,7 +173,7 @@ mode = "cross_lingual"
 import requests
 import base64
 
-url = "http://10.154.39.97:8005/v1/cosyvoice/generate"
+url = "http://10.50.121.102:8005/v1/cosyvoice/generate"
 
 # 读取参考音频并转为base64
 with open("prompt.wav", 'rb') as f:
@@ -202,7 +202,7 @@ if response.status_code == 200:
 ### 基础零样本克隆
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8005/v1/cosyvoice/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8005/v1/cosyvoice/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "要合成的目标文本",
@@ -217,7 +217,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8005/v1/cosyvoice/generate \
 ### 指令控制（生气语气）
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8005/v1/cosyvoice/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8005/v1/cosyvoice/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "说了多少遍了还记不住，真是让人火大！",
@@ -232,7 +232,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8005/v1/cosyvoice/generate \
 ### 呼吸控制（cross_lingual 模式）
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8005/v1/cosyvoice/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8005/v1/cosyvoice/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "You are helpful.<|endofprompt|>[breath]因为你那一辈人[breath]在乡里面住要习惯一点",  # text中直接用控制符

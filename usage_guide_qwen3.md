@@ -2,7 +2,7 @@
 
 ## 服务信息
 
-- **服务地址**: `http://10.154.39.97:8007`
+- **服务地址**: `http://10.50.121.102:8007`
 - **模型**: Qwen3-TTS-12Hz-1.7B-VoiceDesign
 - **功能**: 通过自然语言描述生成指定音色的语音
 
@@ -30,7 +30,7 @@ pkill -f api_server_qwen3_voicedesign
 ### 1. 健康检查
 
 ```bash
-curl --noproxy '*' http://10.154.39.97:8007/health
+curl --noproxy '*' http://10.50.121.102:8007/health
 ```
 
 **响应示例**:
@@ -41,13 +41,13 @@ curl --noproxy '*' http://10.154.39.97:8007/health
 ### 2. 配置信息
 
 ```bash
-curl --noproxy '*' http://10.154.39.97:8007/v1/voicedesign/config
+curl --noproxy '*' http://10.50.121.102:8007/v1/voicedesign/config
 ```
 
 ### 3. 语音生成
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8007/v1/voicedesign/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8007/v1/voicedesign/generate \
   -H "Content-Type: application/json" \
   -d '{"text": "要合成的文本", "instruction": "声音风格描述", "language": "Chinese"}' \
   -o output.wav
@@ -93,7 +93,7 @@ pip install requests soundfile
 ```python
 import requests
 
-url = "http://10.154.39.97:8007/v1/voicedesign/generate"
+url = "http://10.50.121.102:8007/v1/voicedesign/generate"
 
 data = {
     "text": "今天天气真不错呀！阳光明媚心情好，去公园散步吧！",
@@ -118,7 +118,7 @@ else:
 ### 基础调用
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8007/v1/voicedesign/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8007/v1/voicedesign/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "你好，欢迎使用Qwen3-TTS语音合成",
@@ -131,7 +131,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8007/v1/voicedesign/generate \
 ### 英文语音
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8007/v1/voicedesign/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8007/v1/voicedesign/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Hello, this is a voice generation test",
@@ -144,7 +144,7 @@ curl --noproxy '*' -X POST http://10.154.39.97:8007/v1/voicedesign/generate \
 ### 控制输出长度
 
 ```bash
-curl --noproxy '*' -X POST http://10.154.39.97:8007/v1/voicedesign/generate \
+curl --noproxy '*' -X POST http://10.50.121.102:8007/v1/voicedesign/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "短文本",
