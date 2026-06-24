@@ -25,6 +25,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -278,21 +279,23 @@ class CosyVoiceHTTPAdapter(BaseTTSAdapter):
 
         CosyVoice3 默认返回 IEEE float（WAVE_FORMAT_IEEE_FLOAT, format=3）；
         audio_merger 用 stdlib wave 模块只支持 PCM format=1，读 float wav
-        会抛 'unknown format: 3'。无论原格式是 float 还是 PCM，转换后都得到
-        统一的 PCM_16 wav（int16 → float → int16 量化误差近似为 0）。
+        会抛 'unknown format: 3'。这里 sf.read 只负责解码（float → ndarray），
+        落盘完全交给 stdlib wave.open(path, 'wb')，'wb' 模式总是覆盖。
 
-        落盘走 BytesIO + Path.write_bytes，不直接 sf.write(path, ...)：
-        soundfile 不允许覆盖已存在的非 RAW 文件，会抛
-        'Not allowed for existing files'，上次失败残留 / 旧版本 write_bytes
-        留下的同名 wav 会让重跑直接挂掉。write_bytes 总是覆盖，和原
-        output_wav.write_bytes(wav_bytes) 语义一致。
+        关键：sf.read 不能显式传 format='WAV'。soundfile 0.13.1 在
+        BytesIO + 显式 format 参数时会走 "Not allowed for existing files"
+        检查（即便目标只是内存 buffer，没有任何磁盘文件存在），直接抛
+        TypeError。去掉 format 让 soundfile 从 wav 字节流自己推断即可。
         """
-        audio, sr = sf.read(io.BytesIO(wav_bytes), format='WAV', always_2d=False)
+        audio, sr = sf.read(io.BytesIO(wav_bytes), always_2d=False)
         audio = np.clip(audio, -1.0, 1.0)
         int16_audio = (audio * 32767).astype(np.int16)
-        buf = io.BytesIO()
-        sf.write(buf, int16_audio, sr, format='WAV', subtype='PCM_16')
-        output_path.write_bytes(buf.getvalue())
+        n_channels = 1 if int16_audio.ndim == 1 else int16_audio.shape[1]
+        with wave.open(str(output_path), 'wb') as wf:
+            wf.setnchannels(n_channels)
+            wf.setsampwidth(2)  # int16 = 2 bytes per sample
+            wf.setframerate(sr)
+            wf.writeframes(int16_audio.tobytes())
 
     # ── 内部工具 ─────────────────────────────────────────────────────
 
