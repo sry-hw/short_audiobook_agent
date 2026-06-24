@@ -280,11 +280,19 @@ class CosyVoiceHTTPAdapter(BaseTTSAdapter):
         audio_merger 用 stdlib wave 模块只支持 PCM format=1，读 float wav
         会抛 'unknown format: 3'。无论原格式是 float 还是 PCM，转换后都得到
         统一的 PCM_16 wav（int16 → float → int16 量化误差近似为 0）。
+
+        落盘走 BytesIO + Path.write_bytes，不直接 sf.write(path, ...)：
+        soundfile 不允许覆盖已存在的非 RAW 文件，会抛
+        'Not allowed for existing files'，上次失败残留 / 旧版本 write_bytes
+        留下的同名 wav 会让重跑直接挂掉。write_bytes 总是覆盖，和原
+        output_wav.write_bytes(wav_bytes) 语义一致。
         """
         audio, sr = sf.read(io.BytesIO(wav_bytes), format='WAV', always_2d=False)
         audio = np.clip(audio, -1.0, 1.0)
         int16_audio = (audio * 32767).astype(np.int16)
-        sf.write(str(output_path), int16_audio, sr, format='WAV', subtype='PCM_16')
+        buf = io.BytesIO()
+        sf.write(buf, int16_audio, sr, format='WAV', subtype='PCM_16')
+        output_path.write_bytes(buf.getvalue())
 
     # ── 内部工具 ─────────────────────────────────────────────────────
 
