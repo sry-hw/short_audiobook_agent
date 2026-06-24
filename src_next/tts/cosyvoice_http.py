@@ -49,6 +49,10 @@ _DEFAULT_MODE = "instruct"
 _DEFAULT_TIMEOUT_PER_SEG = 60
 _DEFAULT_MAX_WORKERS = 4
 _ENDOFPROMPT = "<|endofprompt|>"
+# instruct 模式必须以此英文前缀开头；缺少会让模型把整段 prompt 当成要朗读的
+# 文本念出来（生成的音频里能听到指令本身）。旧链路
+# src/cosyvoice/tts_instruction_generator.py 一直带着这个前缀。
+_INSTRUCT_PREFIX = "You are a helpful assistant. "
 
 
 class CosyVoiceHTTPAdapter(BaseTTSAdapter):
@@ -302,7 +306,12 @@ class CosyVoiceHTTPAdapter(BaseTTSAdapter):
     def _build_prompt_text(self, inst: TTSInstruction) -> str:
         """根据通用字段拼 CosyVoice instruct 模式的 prompt_text。
 
-        instruct 模式要求格式：``指令.<|endofprompt|>``
+        instruct 模式要求格式：
+        ``You are a helpful assistant. 指令.<|endofprompt|>``
+
+        前缀 ``You are a helpful assistant. `` 必填！缺少会让模型把整段
+        prompt 当成要朗读的文本念出来（音频里会听到指令本身，而不是按
+        指令风格念 text）。这是 CosyVoice3 instruct 模式的硬性约束。
 
         优先级：
             1. delivery_instruction（导演层给的具体朗读指导，最准）；
@@ -334,7 +343,7 @@ class CosyVoiceHTTPAdapter(BaseTTSAdapter):
                 parts.append("用自然平和的语气说")
 
         instruction_str = "，".join(parts)
-        return f"{instruction_str}.{_ENDOFPROMPT}"
+        return f"{_INSTRUCT_PREFIX}{instruction_str}.{_ENDOFPROMPT}"
 
     def _format_style_snapshot(self, inst: TTSInstruction) -> str:
         stress = inst.stress_words if isinstance(inst.stress_words, list) else []

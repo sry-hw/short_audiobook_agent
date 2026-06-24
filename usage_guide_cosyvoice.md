@@ -94,10 +94,11 @@ prompt_text = "指令.<|endofprompt|>参考音频转写"
 
 **instruct 模式：**
 ```
-prompt_text = "指令.<|endofprompt|>"
+prompt_text = "You are a helpful assistant. 指令.<|endofprompt|>"
 ```
 | 部分 | 说明 |
 |------|------|
+| `You are a helpful assistant. ` | **必填前缀**！缺少会让模型把指令当文本念出来（生成的音频里能听到这句指令本身） |
 | 指令部分 | 控制输出风格（方言、语速、情绪等），如"请用广东话表达" |
 | `<|endofprompt|>` | 分隔符，必填 |
 
@@ -114,12 +115,12 @@ prompt_text = ""（空字符串）
 
 | 效果 | prompt_text 示例 |
 |------|------------------|
-| 广东话 | `请用广东话表达。<\|endofprompt\|>` |
-| 快速语速 | `请用尽可能快地语速说一句话。<\|endofprompt\|>` |
-| 慢速 | `请用缓慢的语速说。<\|endofprompt\|>` |
-| 高兴 | `用开心的语气说。<\|endofprompt\|>` |
-| 生气 | `用生气的语气说。<\|endofprompt\|>` |
-| 悲伤 | `用悲伤的语气说。<\|endofprompt\|>` |
+| 广东话 | `You are a helpful assistant. 请用广东话表达。<\|endofprompt\|>` |
+| 快速语速 | `You are a helpful assistant. 请用尽可能快地语速说一句话。<\|endofprompt\|>` |
+| 慢速 | `You are a helpful assistant. 请用缓慢的语速说。<\|endofprompt\|>` |
+| 高兴 | `You are a helpful assistant. 用开心的语气说。<\|endofprompt\|>` |
+| 生气 | `You are a helpful assistant. 用生气的语气说。<\|endofprompt\|>` |
+| 悲伤 | `You are a helpful assistant. 用悲伤的语气说。<\|endofprompt\|>` |
 
 ---
 
@@ -181,7 +182,9 @@ with open("prompt.wav", 'rb') as f:
 
 data = {
     "text": "你到底有没有在听我说话？说了这么多遍还是记不住！",
-    "prompt_text": "请用生气的语气说。<|endofprompt|>",  # instruct模式：指令+分隔符
+    # instruct模式：必须以 "You are a helpful assistant. " 开头
+    # 缺少前缀会让模型把指令当文本念出来（生成的音频能听到指令本身）
+    "prompt_text": "You are a helpful assistant. 请用生气的语气说。<|endofprompt|>",
     "prompt_audio": prompt_audio,
     "mode": "instruct",
     "stream": False
@@ -217,11 +220,13 @@ curl --noproxy '*' -X POST http://10.50.121.102:8005/v1/cosyvoice/generate \
 ### 指令控制（生气语气）
 
 ```bash
+# instruct模式：prompt_text 必须以 "You are a helpful assistant. " 开头
+# 缺少前缀会让模型把指令当文本念出来（生成的音频能听到指令本身）
 curl --noproxy '*' -X POST http://10.50.121.102:8005/v1/cosyvoice/generate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "说了多少遍了还记不住，真是让人火大！",
-    "prompt_text": "用生气的语气说。<|endofprompt|>",  # instruct模式：指令+分隔符
+    "prompt_text": "You are a helpful assistant. 用生气的语气说。<|endofprompt|>",
     "prompt_audio": "/path/to/prompt.wav",
     "mode": "instruct",
     "stream": false
@@ -255,5 +260,6 @@ curl --noproxy '*' -X POST http://10.50.121.102:8005/v1/cosyvoice/generate \
 5. **参考音频**: 建议5-30秒，太短效果差，太长处理慢
 6. **三种模式的 prompt_text 格式**：
    - `zero_shot`: `"指令.<|endofprompt|>转写"`（包含转写）
-   - `instruct`: `"指令.<|endofprompt|>"`（只有指令）
+   - `instruct`: `"You are a helpful assistant. 指令.<|endofprompt|>"`（**前缀必填**，只有指令）
    - `cross_lingual`: `""`（空字符串，text中直接用控制符+分隔符）
+7. **instruct 模式前缀必填**：`prompt_text` 必须以 `"You are a helpful assistant. "` 开头！缺少会让模型把整段指令当成要朗读的文本念出来，生成音频里能听到指令本身、而不是按指令风格念 `text`。这是 CosyVoice3 instruct 模式的硬性约束，旧链路 `src/cosyvoice/tts_instruction_generator.py` 一直带着这个前缀。
