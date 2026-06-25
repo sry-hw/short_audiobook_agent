@@ -82,30 +82,70 @@ ICON_FAILED = "❌"
 
 # CSS 样式
 CUSTOM_CSS = """
-.result-bar {
-    background: #f5f5f5;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    padding: 10px 14px;
-    font-size: 13px;
-    margin-top: 8px;
-    line-height: 1.6;
+/* 紧凑排版：减小默认块间距 */
+.gr-block {
+    margin-bottom: 6px !important;
 }
+.gr-row {
+    gap: 8px !important;
+}
+.gradio-container .gr-block > .wrap {
+    padding: 6px !important;
+}
+
+/* 结果信息 bar */
+.result-bar {
+    background: #f0f7ff;
+    border: 1px solid #bae0ff;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    margin-top: 4px;
+    line-height: 1.5;
+}
+
+/* 阶段进度面板 */
 .stage-panel {
     background: #fafafa;
     border: 1px solid #e8e8e8;
     border-radius: 6px;
-    padding: 8px 12px;
+    padding: 6px 10px;
     font-family: monospace;
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: 12.5px;
+    line-height: 1.5;
 }
+
+/* 错误提示 */
 .error-text {
     background: #fff5f5;
     border: 1px solid #ffccc7;
     border-radius: 6px;
     padding: 8px 12px;
     color: #cf1322;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* 下载音频按钮：整块 bar 样式 */
+.download-bar {
+    width: 100% !important;
+    background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 14px 20px !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    text-align: center !important;
+    cursor: pointer !important;
+    box-shadow: 0 2px 6px rgba(82, 196, 26, 0.3) !important;
+    transition: all 0.2s !important;
+    display: block !important;
+}
+.download-bar:hover {
+    background: linear-gradient(135deg, #389e0d 0%, #237804 100%) !important;
+    box-shadow: 0 4px 10px rgba(82, 196, 26, 0.4) !important;
+    transform: translateY(-1px) !important;
 }
 """
 
@@ -227,38 +267,12 @@ def _render_result_bar(
     )
 
 
-def _extract_log_summary(logs: str, max_lines: int = 40) -> str:
-    """从完整日志提取关键行（含 ✓/完成/失败/error/Summary）。"""
-    if not logs:
-        return "无日志"
-    lines = logs.split("\n")
-    key_words = ("✓", "完成", "失败", "error", "Error", "[Summary]", "success=", "total_time")
-    key_lines = [ln.strip() for ln in lines if ln.strip() and any(w in ln for w in key_words)]
-    if not key_lines:
-        return "\n".join(lines[-20:])
-    return "\n".join(key_lines[:max_lines])
-
-
 # ─── 输入校验 + story_name 推断 ────────────────────────────────────────────
 
 
 def _is_task_id(name: str) -> bool:
     """task_id 格式：``YYYYMMDD_HHMMSS`` 或带后缀。"""
     return bool(re.match(r"^\d{8}_\d{6}(_[A-Za-z0-9]+)?$", name))
-
-
-def _find_latest_task_id(profile_stem: str) -> str | None:
-    """扫描 ``<WEBUI_OUTPUT_ROOT>/<profile_stem>`` 下所有 task_id 子目录，返回最新。
-
-    新布局下 story_name 不进路径，所以复用查找只需 profile_stem 一层。
-    """
-    profile_dir = Path(WEBUI_OUTPUT_ROOT).expanduser().resolve() / profile_stem
-    if not profile_dir.exists():
-        return None
-    task_ids = [p.name for p in profile_dir.iterdir() if p.is_dir() and _is_task_id(p.name)]
-    if not task_ids:
-        return None
-    return sorted(task_ids)[-1]
 
 
 def _derive_story_name(text: str, file_upload) -> str:
@@ -341,20 +355,18 @@ def on_profile_change(profile_path: str):
 
 
 # 输出 tuple 的字段顺序（必须和事件绑定 outputs 顺序一致）
-# 13 个组件：
-#   1. error_text        (Markdown, 默认隐藏)
-#   2. textbox           (故事文本)
-#   3. file_upload       (TXT)
-#   4. profile_dropdown  (Dropdown)
+# 11 个组件：
+#   1. error_text         (Markdown, 默认隐藏)
+#   2. textbox            (故事文本)
+#   3. file_upload        (TXT)
+#   4. profile_dropdown   (Dropdown)
 #   5. profile_description (Markdown)
-#   6. reuse_existing_checkbox (Checkbox)
-#   7. progress_panel    (Textbox)
-#   8. audio_player      (Audio, 默认隐藏)
-#   9. download_btn      (File, 默认隐藏)
-#  10. result_info       (Markdown, 默认隐藏)
-#  11. log_display       (Textbox)
-#  12. log_summary       (Textbox)
-#  13. generate_btn      (Button)
+#   6. progress_panel     (Textbox)
+#   7. audio_player       (Audio, 默认隐藏)
+#   8. download_btn       (DownloadButton, 默认隐藏)
+#   9. result_info        (Markdown, 默认隐藏)
+#  10. log_display        (Textbox)
+#  11. generate_btn       (Button)
 
 
 def _build_yield(
@@ -365,7 +377,6 @@ def _build_yield(
     file_upload_value=None,  # gr.update() or None
     profile_value=None,
     profile_desc_value=None,
-    reuse_value=None,
     progress_value=None,
     audio_value=None,        # str | None
     audio_visible=None,
@@ -374,10 +385,9 @@ def _build_yield(
     result_value=None,
     result_visible=None,
     log_display_value=None,
-    log_summary_value=None,
     btn_interactive=None,
 ):
-    """构造 13 元素 tuple；任何字段为 None 时用 gr.update()（不变化）。"""
+    """构造 11 元素 tuple；任何字段为 None 时用 gr.update()（不变化）。"""
     def md(value, visible=None):
         if value is None and visible is None:
             return gr.update()
@@ -407,14 +417,12 @@ def _build_yield(
         gr.update() if file_upload_value is None else file_upload_value,             # 3
         fld(profile_value),                                                          # 4
         md(profile_desc_value),                                                      # 5
-        gr.update() if reuse_value is None else gr.update(value=reuse_value),        # 6
-        tb(progress_value),                                                          # 7
-        md(audio_value, audio_visible),                                              # 8
-        md(download_value, download_visible),                                        # 9
-        md(result_value, result_visible),                                            # 10
-        tb(log_display_value),                                                       # 11
-        tb(log_summary_value),                                                       # 12
-        btn(btn_interactive),                                                        # 13
+        tb(progress_value),                                                          # 6
+        md(audio_value, audio_visible),                                              # 7
+        md(download_value, download_visible),                                        # 8
+        md(result_value, result_visible),                                            # 9
+        tb(log_display_value),                                                       # 10
+        btn(btn_interactive),                                                        # 11
     )
 
 
@@ -422,13 +430,11 @@ def generate_audiobook_handler(
     text: str,
     file_upload,
     profile_path: str,
-    reuse_existing: bool,
 ):
-    """主生成函数；generator + yield 13 元素 tuple。
+    """主生成函数；generator + yield 11 元素 tuple。
 
-    Inputs 4 个 → 返回 tuple 13 个（与 outputs 列表对应）。
-    状态（events_collected / current_log_text）通过闭包维护，
-    不需要把 progress / log_display 当 input 回传。
+    Inputs 3 个 → 返回 tuple 11 个（与 outputs 列表对应）。
+    状态（events_collected / current_log_text）通过闭包维护。
     """
     # ── 1. 输入校验 ─────────────────────────────────────────────────
     if not text or not text.strip():
@@ -474,18 +480,9 @@ def generate_audiobook_handler(
     profile_stem = Path(profile_path).stem
     webui_output_root = str(Path(WEBUI_OUTPUT_ROOT) / profile_stem)
 
-    # ── 3. 推断 story_name + 处理 reuse_existing ────────────────────
+    # ── 3. 推断 story_name + 生成 task_id ───────────────────────────
     story_name = _derive_story_name(text, file_upload)
-
-    if reuse_existing:
-        # 复用模式：扫描 <WEBUI_OUTPUT_ROOT>/<profile_stem>/ 下最新 task_id
-        existing_task_id = _find_latest_task_id(profile_stem)
-        if existing_task_id:
-            task_id = existing_task_id
-        else:
-            task_id = now_timestamp()
-    else:
-        task_id = now_timestamp()
+    task_id = now_timestamp()
 
     # ── 4. 构造 output_dir + 落盘 input 文件 ────────────────────────
     # task_id_layout=True → output_dir = <webui_output_root>/<task_id>/（无 story_name 层）
@@ -526,7 +523,6 @@ def generate_audiobook_handler(
     )
 
     # ── 7. 迭代 stream events ───────────────────────────────────────
-    reuse_override = True if reuse_existing else None
     events_collected: list[dict[str, Any]] = []
     current_log_text = ""
 
@@ -538,7 +534,6 @@ def generate_audiobook_handler(
             story_name=story_name,
             task_id=task_id,
             task_id_layout=True,
-            reuse_existing_override=reuse_override,
         ):
             events_collected.append(event)
             etype = event.get("type")
@@ -595,7 +590,6 @@ def generate_audiobook_handler(
                     ),
                     result_visible=True,
                     log_display_value=logs,
-                    log_summary_value=_extract_log_summary(logs),
                     btn_interactive=True,
                 )
                 return
@@ -624,7 +618,6 @@ def generate_audiobook_handler(
                     result_value=result_value,
                     result_visible=result_visible,
                     log_display_value=logs,
-                    log_summary_value=_extract_log_summary(logs),
                     btn_interactive=True,
                 )
                 return
@@ -648,19 +641,17 @@ def generate_audiobook_handler(
 def reset_handler():
     """清空按钮。"""
     return (
-        gr.update(value=""),                                                          # 1. error (清空+隐藏)
-        gr.update(value=""),                                                          # 2. textbox
-        gr.update(value=None),                                                        # 3. file_upload
-        gr.update(value=None),                                                        # 4. profile_dropdown
-        gr.update(value=""),                                                          # 5. profile_desc
-        gr.update(value=False),                                                       # 6. reuse_existing
-        gr.update(value=""),                                                          # 7. progress_panel
-        gr.update(value=None, visible=False),                                         # 8. audio
-        gr.update(value=None, visible=False),                                         # 9. download
-        gr.update(value="", visible=False),                                           # 10. result_info
-        gr.update(value=""),                                                          # 11. log_display
-        gr.update(value=""),                                                          # 12. log_summary
-        gr.update(interactive=True),                                                  # 13. generate_btn
+        gr.update(value="", visible=False),                # 1. error_text (清空+隐藏)
+        gr.update(value=""),                               # 2. textbox
+        gr.update(value=None),                             # 3. file_upload
+        gr.update(value=None),                             # 4. profile_dropdown
+        gr.update(value=""),                               # 5. profile_desc
+        gr.update(value=_render_stage_panel_initial()),    # 6. progress_panel
+        gr.update(value=None, visible=False),              # 7. audio_player
+        gr.update(value=None, visible=False),              # 8. download_btn
+        gr.update(value="", visible=False),                # 9. result_info
+        gr.update(value=""),                               # 10. log_display
+        gr.update(interactive=True),                       # 11. generate_btn
     )
 
 
@@ -669,11 +660,16 @@ def reset_handler():
 
 def create_ui() -> gr.Blocks:
     """构造 Gradio Blocks 界面。"""
-    # 启动时扫描 profiles
+    # 启动时扫描 profiles；过滤掉 blue_* （本服务只跑黄区内网）
     try:
-        profiles = discover_profiles(_PROFILES_DIR)
+        all_profiles = discover_profiles(_PROFILES_DIR)
     except Exception:
-        profiles = []
+        all_profiles = []
+    profiles = [
+        p for p in all_profiles
+        if not p.get("filename_stem", "").startswith("blue_")
+        and p.get("region", "") != "blue"
+    ]
 
     dropdown_choices = [(p["display_name"], p["path"]) for p in profiles]
     if dropdown_choices:
@@ -689,29 +685,39 @@ def create_ui() -> gr.Blocks:
         default_profile_value = None
         default_desc = "_未发现可用 profile（请检查 src_next/profiles/）_"
 
-    with gr.Blocks(title="有声书生成 (src_next)", theme=gr.themes.Soft(), css=CUSTOM_CSS) as app:
-        gr.Markdown("# 📻 有声书生成器 (src_next)")
-        gr.Markdown(
-            f"ℹ️ 最多 **{DEFAULT_CONCURRENCY}** 个生成任务同时运行，"
-            f"高峰时会排队（队列上限 {DEFAULT_QUEUE_SIZE}）。"
-        )
+    # 紧凑主题：减小默认 spacing / radius
+    try:
+        theme = gr.themes.Soft(spacing_size="sm", radius_size="md", text_size="md")
+    except Exception:
+        theme = gr.themes.Soft()
+
+    with gr.Blocks(title="有声书生成器", theme=theme, css=CUSTOM_CSS) as app:
+        with gr.Row():
+            gr.Markdown("# 📻 有声书生成器")
+            gr.Markdown(
+                f"<div style='text-align:right; color:#888; font-size:13px; padding-top:14px'>"
+                f"最多 {DEFAULT_CONCURRENCY} 个任务并发 · 队列上限 {DEFAULT_QUEUE_SIZE}"
+                f"</div>",
+                elem_classes=["concurrency-hint"],
+            )
 
         with gr.Row():
+            # 左栏：输入
             with gr.Column(scale=3):
                 textbox = gr.Textbox(
                     label="故事文本",
                     placeholder=f"请输入故事文本（建议 ≤ 3000 字，硬上限 {MAX_TEXT_LENGTH} 字）...",
-                    lines=15,
-                    max_lines=20,
+                    lines=12,
+                    max_lines=15,
                 )
                 char_count = gr.Markdown(f"0 / {MAX_TEXT_LENGTH}")
-
                 file_upload = gr.File(
-                    label=f"或上传 TXT 文件（UTF-8/GBK，≤ {MAX_TXT_FILE_SIZE_BYTES // 1024} KB）",
+                    label=f"或上传 TXT（UTF-8/GBK，≤ {MAX_TXT_FILE_SIZE_BYTES // 1024} KB）",
                     file_types=[".txt"],
                     file_count="single",
                 )
 
+            # 右栏：配置 + 进度
             with gr.Column(scale=2):
                 profile_dropdown = gr.Dropdown(
                     label="Profile 选择",
@@ -721,17 +727,6 @@ def create_ui() -> gr.Blocks:
                 )
                 profile_description = gr.Markdown(default_desc)
 
-                with gr.Accordion("高级选项", open=False):
-                    reuse_existing_checkbox = gr.Checkbox(
-                        label="复用已有中间结果（高级）",
-                        value=False,
-                    )
-                    gr.Markdown(
-                        "⚠️ 多人共用服务器时**不建议**开启；"
-                        "开启后会读取 ``<output_root>/<story_name>/`` 下"
-                        "最新 task_id 子目录的中间 JSON。"
-                    )
-
                 with gr.Row():
                     generate_btn = gr.Button("🎬 生成有声书", variant="primary", size="lg")
                     reset_btn = gr.Button("🔄 清空", size="lg")
@@ -739,50 +734,49 @@ def create_ui() -> gr.Blocks:
                 progress_panel = gr.Textbox(
                     label="生成进度",
                     value=_render_stage_panel_initial(),
-                    lines=12,
+                    lines=10,
                     interactive=False,
                     elem_classes=["stage-panel"],
                 )
-
                 error_text = gr.Markdown("", visible=False, elem_classes=["error-text"])
 
-        # 结果区
+        # 结果区：紧凑布局，audio / download / result_info 上下排列
         with gr.Group():
-            gr.Markdown("---")
-            gr.Markdown("### 生成结果")
-            with gr.Row():
-                audio_player = gr.Audio(label="生成的音频", visible=False)
-                download_btn = gr.File(label="下载音频", visible=False)
+            gr.Markdown("### 🎧 生成结果")
             result_info = gr.Markdown("", visible=False, elem_classes=["result-bar"])
+            audio_player = gr.Audio(label="生成的音频", visible=False, show_download_button=False)
+            download_btn = gr.DownloadButton(
+                "💾 下载音频",
+                visible=False,
+                variant="primary",
+                size="lg",
+                elem_classes=["download-bar"],
+            )
 
         # 日志区
         with gr.Group():
-            gr.Markdown("### 实时日志")
-            log_display = gr.Textbox(label="", lines=10, interactive=False, max_lines=20)
-            gr.Markdown("#### 日志摘要")
-            log_summary = gr.Textbox(label="", lines=8, interactive=False)
+            gr.Markdown("### 📜 实时日志")
+            log_display = gr.Textbox(label="", lines=8, interactive=False, max_lines=15)
 
-        # 13 个输出组件顺序（必须和 generate_audiobook_handler 返回 tuple 一致）
+        # 11 个输出组件顺序（必须和 generate_audiobook_handler / reset_handler 返回 tuple 一致）
         outputs = [
             error_text,              # 1
             textbox,                 # 2
             file_upload,             # 3
             profile_dropdown,        # 4
             profile_description,     # 5
-            reuse_existing_checkbox, # 6
-            progress_panel,          # 7
-            audio_player,            # 8
-            download_btn,            # 9
-            result_info,             # 10
-            log_display,             # 11
-            log_summary,             # 12
-            generate_btn,            # 13
+            progress_panel,          # 6
+            audio_player,            # 7
+            download_btn,            # 8
+            result_info,             # 9
+            log_display,             # 10
+            generate_btn,            # 11
         ]
 
-        # 生成按钮：4 inputs（text / file_upload / profile / reuse）
+        # 生成按钮：3 inputs（text / file_upload / profile_path）
         generate_btn.click(
             fn=generate_audiobook_handler,
-            inputs=[textbox, file_upload, profile_dropdown, reuse_existing_checkbox],
+            inputs=[textbox, file_upload, profile_dropdown],
             outputs=outputs,
         )
 
