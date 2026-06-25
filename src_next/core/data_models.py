@@ -98,6 +98,11 @@ class CharacterProfile:
         供 voicebank 层使用的音色描述提示词。
     confidence : float
         分析置信度，0.0~1.0。
+    aliases : list[str]
+        该角色的别名列表（不含 canonical name 本身）。由 character_analyzer
+        在归并阶段填入：同一角色的不同称呼（绰号 / 亲属称谓 / 描述性称呼等）
+        会合并到一个 CharacterProfile，被合并的称呼写进 aliases。
+        narrator 永远为空。
     """
 
     name: str
@@ -107,6 +112,7 @@ class CharacterProfile:
     personality: str | None = None
     voice_prompt: str = ""
     confidence: float = 0.8
+    aliases: list[str] = field(default_factory=list)
 
 
 @dataclass

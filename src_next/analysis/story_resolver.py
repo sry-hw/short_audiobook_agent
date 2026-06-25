@@ -72,11 +72,19 @@ _RESOLVER_SYSTEM_PROMPT = """你是一个中文故事对话分析师。给定一
 - 如果对白前没有明确归属线索，结合上一条对白 / 段落上下文判断（连续对话常常是两个角色轮流说）
 - 实在判断不出 → speaker 填 "narrator"（让下游当作旁白处理）
 
-要求：
+角色名一致性规则（**非常重要**）：
+1. 同一个角色在全文中只允许使用一个 canonical 名字。一旦某个角色名确定（例如"小明"），后续所有指代同一角色的对白 speaker 都必须填"小明"，不能填"那个男孩" / "孩子" / "他"。
+2. canonical 名字必须采用原文中第一次出现且稳定的称呼（优先级：人名 > 职务 > 代词）；不要凭常识改写：原文叫"小明"就不要改成"明"；原文叫"小松鼠豆豆"就不要改成"豆豆"。
+3. 称呼变体（绰号、亲属称谓、职务后缀，例如"小明"和"小明哥哥"、"张老师"和"张先生"）应判定为同一角色，使用 canonical 名。
+4. 不同角色不得合并：父子关系（"小明" vs "小明爸爸"）、主仆关系、人和动物均不得当作同一角色。
+5. narrator 永远独立，不能被合并到任何角色。
+6. speaker 必须是真实角色名（1~6 字），不要把状态副词（如 "气喘吁吁地"、"低声"、"慢慢地"）当作 speaker。
+7. speaker 不要包含标点 / 引号。
+8. 如果 prompt 中给出了「已知角色列表」，**优先**复用其中的名字，避免造新名；只有当本段明确出现新角色时，才允许新增 speaker。
+
+输出要求：
 - resolutions 数量必须等于输入的对白 / 心理活动数量
 - 每个 segment_id 都必须出现且唯一
-- speaker 必须是真实角色名（1~6 字），不要把状态副词（如 "气喘吁吁地"、"低声"、"慢慢地"）当作 speaker
-- speaker 不要包含标点 / 引号
 - confidence 是 0.0~1.0 的浮点数
 """
 
@@ -136,6 +144,10 @@ def resolve_speakers(
     for seg in resolved:
         groups[seg.raw_index].append(seg)
 
+    # 跨段累积的已知角色名（list 保序，便于 prompt 里按首次识别顺序展示）。
+    # 用于约束 LLM 在后续段落中复用已识别名字，减少同一角色的命名漂移。
+    known_speakers: list[str] = []
+
     for raw_index in sorted(groups.keys()):
         group = groups[raw_index]
         candidates = [
@@ -146,17 +158,23 @@ def resolve_speakers(
             continue
 
         resolutions = _resolve_paragraph_dialogues(
-            group, candidates, llm_client, story_context
+            group, candidates, llm_client, story_context,
+            known_speakers=known_speakers,
         )
         id_to_res = {r["segment_id"]: r for r in resolutions}
 
         for seg in candidates:
             res = id_to_res.get(seg.segment_id)
             if res:
-                seg.speaker = _clean_speaker(res.get("speaker") or "narrator")
+                raw_name = res.get("speaker") or "narrator"
+                name = _normalize_speaker_alias(raw_name, known_speakers)
+                seg.speaker = name or "narrator"
             else:
                 # LLM 没覆盖到这条 → narrator 兜底
                 seg.speaker = "narrator"
+            # 累积新 speaker 到 known_speakers（narrator 不计入）
+            if seg.speaker and seg.speaker != "narrator" and seg.speaker not in known_speakers:
+                known_speakers.append(seg.speaker)
 
     # 二次兜底：所有仍为 unknown / 空 speaker 的段都改成 narrator。
     for seg in resolved:
@@ -173,12 +191,17 @@ def _resolve_paragraph_dialogues(
     dialogue_segs: list[Segment],
     llm_client: BaseLLMClient,
     story_context: str,
+    *,
+    known_speakers: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """对单个段落内的所有 dialogue segment 调一次 LLM。
 
     失败 / 结构异常 → 返回空列表（让上层走 narrator 兜底）。
     """
-    prompt = _build_resolver_prompt(group, dialogue_segs, story_context)
+    prompt = _build_resolver_prompt(
+        group, dialogue_segs, story_context,
+        known_speakers=known_speakers or [],
+    )
     try:
         result = llm_client.generate_json(
             prompt, system_prompt=_RESOLVER_SYSTEM_PROMPT
@@ -196,11 +219,19 @@ def _build_resolver_prompt(
     group: list[Segment],
     dialogue_segs: list[Segment],
     story_context: str,
+    *,
+    known_speakers: list[str] | None = None,
 ) -> str:
-    """构造单段 LLM prompt：段落上下文 + 待判断的 dialogue 列表。"""
+    """构造单段 LLM prompt：全文上下文 + 已识别角色 + 段落原文 + 待判断对白。"""
     parts: list[str] = []
     if story_context:
-        parts.append(f"## 故事上下文\n\n{story_context}")
+        parts.append(f"## 故事全文（请通读后再判断）\n\n{story_context}")
+
+    # 已识别角色（跨段累积）：约束 LLM 优先复用已知名，减少命名漂移。
+    # 空列表不输出该段，避免无谓 prompt 噪声。
+    if known_speakers:
+        parts.append("\n## 已识别角色（请优先复用其中的名字，避免造新名）\n")
+        parts.append(" / ".join(known_speakers))
 
     # 用组内全部 segment 按原顺序拼回段落原文
     # （dialogue 段加回引号字符，让 LLM 看到的上下文接近原文）。
@@ -214,6 +245,7 @@ def _build_resolver_prompt(
     parts.append(
         "\n请对以上每条对白输出 speaker，"
         "resolutions 数量必须等于输入对白数，segment_id 必须一一对应。"
+        + ("已识别角色列表中的名字若仍出现在本段，必须复用。" if known_speakers else "")
     )
     return "\n".join(parts)
 
@@ -269,4 +301,29 @@ def _clean_speaker(raw: Any) -> str:
     s = str(raw).strip().strip(_SPEAKER_EDGE_STRIP)
     if len(s) > 8:
         s = s[:8]
+    return s
+
+
+def _normalize_speaker_alias(speaker: str, known_speakers: list[str]) -> str:
+    """保守归并：清洗标点 → 全等命中 → 失败原样返回。
+
+    本函数**只负责减少明显 naming drift**（如 LLM 输出带尾标点 / 多余空格
+    导致同一角色名在不同段落里写法不一致）。不做任何强规则合并：
+    不做安全后缀剥离、不做子串合并、不做语义判断。
+
+    真正的别名合并（绰号 / 亲属变体 / 描述性称呼 / 安全后缀）全部交给
+    ``character_analyzer`` 的 ``alias_map``。这样 story_resolver 保持
+    最保守，避免误合并不同角色（如「小明」和「小明爸爸」）。
+    """
+    s = _clean_speaker(speaker)
+    if not s or s == "narrator":
+        return s
+
+    known = set(known_speakers or [])
+
+    # 全等命中：清洗后能在 known_speakers 里找到完全相同的名字
+    if s in known:
+        return s
+
+    # 其他情况一律原样返回；交给 character_analyzer 兜底
     return s

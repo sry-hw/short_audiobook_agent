@@ -63,7 +63,7 @@ _VALID_PITCHES = {"low", "medium_low", "medium", "medium_high", "high"}
 
 # pace / pause_hint / emotion_intensity 的合法范围
 _PACE_MIN, _PACE_MAX = 0.75, 1.30
-_PAUSE_MIN, _PAUSE_MAX = 0.2, 1.0
+_PAUSE_MIN, _PAUSE_MAX = 0.4, 1.5
 _INTENSITY_MIN, _INTENSITY_MAX = 0.0, 1.0
 
 # stress_words 最多多少个
@@ -106,7 +106,11 @@ _DIRECTOR_SYSTEM_PROMPT = """你是一个中文有声书导演。根据每个文
 - tone（语气）：gentle / warm / serious / playful / calm / lively / normal。
 - volume（音量）：soft / normal / strong。
 - pitch（音高）：low / medium_low / medium / medium_high / high。
-- pause_hint（段后停顿秒数）：0.2~1.0。
+- pause_hint（段后停顿秒数）：0.4~1.5。**段间停顿偏长比偏短好**——中文 TTS 输出本身连贯，太短的 pause 听起来仍然紧凑。
+  * 段内对白切换（dialogue → narration 或 narration → dialogue）：≥ 0.5 秒
+  * 段落结尾（segment 是同段落最后一段 / 故事结尾）：≥ 0.8 秒
+  * 童话 / 儿童故事：整体偏长（让小听众有消化时间）
+  * 悬疑 / 紧张场景：可以适度缩短但不要低于 0.4 秒
 - stress_words（重读词）：1~3 个，**必须是原文中出现的词**，不要造词。
 - delivery_instruction（朗读指导）：
   * 必须是中文，10~50 字
@@ -347,27 +351,27 @@ def _default_intensity(emotion: str) -> float:
 # 各 emotion 对应的 narration fallback 完整字段
 _NARRATION_FALLBACK_PROFILE: dict[str, dict[str, Any]] = {
     "nostalgic": dict(
-        tone="warm", volume="soft", pitch="medium_low", pace=0.9, pause=0.7,
+        tone="warm", volume="soft", pitch="medium_low", pace=0.9, pause=0.8,
         delivery="以温和怀念的语气叙述，语速稍慢，突出画面感和思绪万千的氛围。",
     ),
     "joyful": dict(
-        tone="lively", volume="normal", pitch="medium_high", pace=1.05, pause=0.5,
+        tone="lively", volume="normal", pitch="medium_high", pace=1.05, pause=0.6,
         delivery="以轻快愉悦的语气叙述，节奏明快，传递明亮的情绪色彩。",
     ),
     "warm": dict(
-        tone="warm", volume="soft", pitch="medium", pace=0.95, pause=0.6,
+        tone="warm", volume="soft", pitch="medium", pace=0.95, pause=0.7,
         delivery="以温暖柔和的语气叙述，营造温馨的画面感。",
     ),
     "sad": dict(
-        tone="serious", volume="soft", pitch="low", pace=0.85, pause=0.8,
+        tone="serious", volume="soft", pitch="low", pace=0.85, pause=1.0,
         delivery="以低沉缓慢的语气叙述，传递感伤和沉重。",
     ),
     "anxious": dict(
-        tone="serious", volume="soft", pitch="medium_high", pace=1.05, pause=0.5,
+        tone="serious", volume="soft", pitch="medium_high", pace=1.05, pause=0.6,
         delivery="以略带紧张压抑的语气叙述，节奏稍快，传递不安。",
     ),
     "calm": dict(
-        tone="calm", volume="normal", pitch="medium", pace=0.95, pause=0.6,
+        tone="calm", volume="normal", pitch="medium", pace=0.95, pause=0.7,
         delivery="以平稳自然的语气叙述，节奏从容，画面感清晰。",
     ),
 }
@@ -378,12 +382,12 @@ def _dialogue_fallback_for_child(text: str) -> dict[str, Any]:
     if any(pc in text for pc in ("？", "?", "！", "!")):
         return dict(
             emotion="excited", tone="lively", volume="normal",
-            pitch="medium_high", pace=1.15, pause=0.4,
+            pitch="medium_high", pace=1.15, pause=0.5,
             delivery="以童真兴奋的语气急切地说出，语速稍快，表现孩子的好奇或雀跃。",
         )
     return dict(
         emotion="playful", tone="lively", volume="normal",
-        pitch="medium_high", pace=1.05, pause=0.4,
+        pitch="medium_high", pace=1.05, pause=0.5,
         delivery="以清亮天真的童声说出，语气活泼带好奇色彩。",
     )
 
@@ -393,12 +397,12 @@ def _dialogue_fallback_for_elderly(text: str) -> dict[str, Any]:
     if any(kw in text for kw in ("记得", "想起", "当年", "故乡")):
         return dict(
             emotion="nostalgic", tone="warm", volume="soft",
-            pitch="medium_low", pace=0.88, pause=0.6,
+            pitch="medium_low", pace=0.88, pause=0.7,
             delivery="以沉稳怀念的口吻缓缓说出，语速偏慢，带岁月沉淀的厚重感。",
         )
     return dict(
         emotion="gentle", tone="warm", volume="soft",
-        pitch="medium_low", pace=0.9, pause=0.5,
+        pitch="medium_low", pace=0.9, pause=0.6,
         delivery="以沉稳温和的长者口吻说出，语气中带着阅历和关怀。",
     )
 
@@ -409,30 +413,30 @@ def _dialogue_fallback_default(text: str) -> dict[str, Any]:
     if emotion == "excited":
         return dict(
             emotion=emotion, tone="lively", volume="normal",
-            pitch="medium_high", pace=1.1, pause=0.4,
+            pitch="medium_high", pace=1.1, pause=0.5,
             delivery="以略带兴奋的语气急促说出，节奏明快。",
         )
     if emotion == "surprised":
         return dict(
             emotion=emotion, tone="lively", volume="normal",
-            pitch="medium_high", pace=1.05, pause=0.4,
+            pitch="medium_high", pace=1.05, pause=0.5,
             delivery="以略带惊讶疑问的语气说出，句尾音调上扬。",
         )
     if emotion == "longing":
         return dict(
             emotion=emotion, tone="warm", volume="soft",
-            pitch="medium_low", pace=0.92, pause=0.5,
+            pitch="medium_low", pace=0.92, pause=0.6,
             delivery="以柔和思念的语气说出，节奏稍缓，带眷恋色彩。",
         )
     if emotion == "serious":
         return dict(
             emotion=emotion, tone="serious", volume="normal",
-            pitch="medium", pace=0.95, pause=0.5,
+            pitch="medium", pace=0.95, pause=0.6,
             delivery="以认真笃定的语气说出，节奏稳健。",
         )
     return dict(
         emotion="neutral", tone="normal", volume="normal",
-        pitch="medium", pace=1.0, pause=0.4,
+        pitch="medium", pace=1.0, pause=0.5,
         delivery="以贴合台词情绪的自然语气说出。",
     )
 
@@ -448,14 +452,14 @@ def _fallback_instruction(
             profile = _dialogue_fallback_for_elderly(seg.text)
         else:
             profile = _dialogue_fallback_default(seg.text)
-        default_pause = 0.4
+        default_pause = 0.5
     else:
         emotion = _detect_narration_emotion(seg.text)
         profile = _NARRATION_FALLBACK_PROFILE.get(
             emotion, _NARRATION_FALLBACK_PROFILE["calm"]
         ).copy()
         profile["emotion"] = emotion
-        default_pause = 0.6
+        default_pause = 0.7
 
     emotion = profile.get("emotion", "neutral")
     return DirectorInstruction(
@@ -507,7 +511,7 @@ def _clean_pause(raw: Any) -> float:
     try:
         v = float(raw)
     except (TypeError, ValueError):
-        return 0.5
+        return 0.7
     return _clamp(v, _PAUSE_MIN, _PAUSE_MAX)
 
 

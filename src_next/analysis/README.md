@@ -61,7 +61,7 @@ def resolve_speakers(
 
 - **输入**：通常是 `quote_classifier.classify_and_merge_quotes()` 的输出。`segment_type="dialogue"` 或 `"inner_thought"` 的 segment 的 speaker 应为 `"unknown"`，等待本函数填充。
 - **输出**：新的 Segment 列表（深拷贝，入参不变；**长度严格等于输入，1:1**）。每个 dialogue / inner_thought segment 的 speaker 被填成 LLM 判定的角色名；narration segment 不动。
-- **契约**：**1:1，不增删 Segment**。LLM 判不出 speaker 时填 `narrator`，但 segment 保留（不 merge）。
+- **契约**：**1:1，不增删 Segment**。LLM 判不出 speaker 时填 `narrator`，但 segment 保留（不 merge）。归并痕迹不写回 Segment，只存最终 speaker；真正的别名合并交给 `character_analyzer`。
 
 策略：
 
@@ -69,8 +69,9 @@ def resolve_speakers(
 2. **每组单独调 LLM**：
    - 跳过没 dialogue / inner_thought 的组（纯旁白段落）。
    - 否则用组内全部 segment 按原顺序拼回近似段落原文（dialogue / inner_thought 段加回引号字符）作为上下文，连同候选列表丢给 LLM。
-3. **写回 speaker**：把 LLM 返回的 speaker 写到对应 segment 上。
-4. **fallback**：LLM 失败 / 没覆盖到的 → `speaker=narrator`，但 segment 保留。
+3. **写回 speaker**：把 LLM 返回的 speaker 写到对应 segment 上，过一次 `_normalize_speaker_alias` 做最保守归并（清洗标点 + 全等命中，不做后缀剥离）。
+4. **跨段角色一致性**：维护 `known_speakers: list[str]` 跨段累积。每段调 LLM 时把已识别角色一并传入 prompt，强约束 LLM 优先复用已知名，减少同一角色在不同段落里命名漂移。
+5. **fallback**：LLM 失败 / 没覆盖到的 → `speaker=narrator`，但 segment 保留。
 
 > **本层只处理 dialogue / inner_thought，不判断引号是不是对白**。后者是 `quote_classifier.py` 的职责。如果跳过 quote_classifier 直接调 resolve_speakers，所有 dialogue candidate 都会被当成真对白处理（包括书名、强调词等），产出会偏。
 
@@ -85,14 +86,34 @@ def analyze_characters(
 ) -> list[CharacterProfile]:
 ```
 
-- **输入**：resolved segments（speaker 已识别）。
-- **输出**：`CharacterProfile` 列表。`index=0` 永远是 narrator，其余按 speaker 首次出现顺序。
+- **输入**：resolved segments（speaker 已识别）+ 故事全文（推荐传全文而非仅标题）。
+- **输出**：`CharacterProfile` 列表。`index=0` 永远是 narrator，其余按 canonical name 在 segments 中首次出现位置排序。同一角色的多个称呼已合并到一个 CharacterProfile，被合并的称呼写进 `aliases` 字段。
 
 字段约束：
 
-- **narrator** 走固定档案：`female / young / voice_prompt="用温柔亲切的年轻女声说书人嗓音说" / confidence=0.95`。
-- **普通角色** 由 LLM 生成；`voice_prompt` 必须以 "用" 开头、以 "说" 结尾，长度 10~60 字符。
-- **LLM 失败时** 根据角色名关键词（动物 / 老人 / 儿童）走 fallback，confidence 标低（0.3~0.4）。
+- **narrator** 走 LLM 动态分析（基于全文判断文体风格 → 推荐旁白音色）；失败 / 全文太短 → fallback 到默认档案（`female / young / "温柔亲切的年轻女性声音，语气平稳，富有讲故事的感觉"`）。`aliases=[]`。
+- **普通角色** 由 LLM 生成；`voice_prompt` 必须是 **Qwen3-TTS VoiceDesign 期望的自然语言描述性短语**（**不是「用...说」格式**——usage_guide_qwen3.md 没有此要求，且「嗓音」「说」这种词会让 Qwen3-TTS 模型困惑导致性别错乱）。长度 10~50 字，必须包含 4 个维度：
+  - 性别（男 / 女 / 中性）
+  - 年龄感（童 / 青年 / 中年 / 老年）
+  - 音色特征（清亮 / 沙哑 / 磁性 / 柔和 / 苍老 / 清脆 ...）
+  - 情绪或语气（亲切 / 严肃 / 活泼 / 温暖 / 平稳 ...）
+
+  参考写法（`character_analyzer.py:_CHARACTER_SYSTEM_PROMPT` 里也有）：
+  - `温柔关切的中年女性声音，语速平稳，带着母爱的温暖`
+  - `低沉磁性的中年男性声音，语速缓慢，成熟稳重`
+  - `苍老沙哑的老年声音，语速偏慢，富有沧桑感`
+- **aliases**：由 LLM 在归并阶段填入；不含 canonical 本身；narrator 永远空。
+- **LLM 失败时** 根据角色名关键词（动物 / 老人 / 儿童）走 fallback，confidence 标低（0.3~0.4）；fallback 也输出 Qwen3 描述性短语格式。
+
+角色归并策略：
+
+1. **LLM 输出 alias_map**：prompt 要求 LLM 输出 `characters` 数组 + `alias_map` 字典（别名 → canonical 名）。canonical 名优先采用原文首次出现且稳定的称呼（优先级：人名 > 职务 > 代词）。
+2. **LLM 缺失 alias_map 时走 fallback**：用本文件内的 `_SAFE_TITLES`（先生/女士/老师/师傅/同志/小姐/大叔/阿姨/爷爷/奶奶 10 个安全称谓）做后缀剥离。
+3. **合并**：把别名 speaker 折叠到 canonical，累积到 `CharacterProfile.aliases`。
+4. **不合并的边界**：父子关系（"小明" vs "小明爸爸"）、主仆关系、人和动物不得当作同一角色。
+5. **排序**：按 canonical name 在 segments 中首次出现位置 `(raw_index, segment_id)` 排序。
+
+详见第九节「角色归并设计」。
 
 ### 3.4 `story_director.py`
 
@@ -120,7 +141,7 @@ def generate_director_plan(
 - `tone`：`gentle / warm / serious / playful / calm / lively / normal` 等。
 - `volume`：`soft / normal / strong`。
 - `pitch`：`low / medium_low / medium / medium_high / high`。
-- `pause_hint`：0.2~1.0 秒。
+- `pause_hint`：0.4~1.5 秒（v2 提高范围，避免中文 TTS 输出连贯 + 短 pause 导致段间紧凑）；段内对白切换 ≥ 0.5 秒；段落结尾 ≥ 0.8 秒；童话 / 儿童故事可适度延长。`audio_merger` 还有 0.4 秒最小静音下限双保险。
 - `stress_words`：1~3 个原文关键词。
 - `delivery_instruction`：10~50 字中文，必须结合原文内容；**禁止** "自然对白语气" / "平稳叙述" 等空泛表达。
 
@@ -156,7 +177,8 @@ Fallback 增强：
                             ▼
               ┌─────────────────────────────────────────┐
               │  analysis/story_resolver.py             │
-              │  (按 raw_index 分组 → 每段一次 LLM)      │
+              │  (按 raw_index 分组 → 每段一次 LLM,      │
+              │   跨段累积 known_speakers)               │
               │  只对 dialogue / inner_thought 问 speaker│
               └─────────────┬───────────────────────────┘
                             │ Segment[] (1:1，speaker 已填)
@@ -165,6 +187,7 @@ Fallback 增强：
   ┌────────────────────────────┐    ┌─────────────────────────────┐
   │ analysis/                  │    │  analysis/                  │
   │ character_analyzer.py      │    │  story_director.py          │
+  │ (含 alias_map 归并)        │    │                              │
   └─────────────┬──────────────┘    └─────────────┬───────────────┘
                 │ CharacterProfile[]                 │ DirectorInstruction[]
                 ▼                                    ▼
@@ -223,3 +246,55 @@ plan = generate_director_plan(resolved, characters, llm)
 ```
 
 切换到真实 Qwen 后端只需把 `MockLLMClient()` 换成 `QwenHTTPClient()`，其余代码不动。
+
+## 九、角色归并设计
+
+短文本（≤3000 字）中同一角色常被多个称呼拆成多个 speaker（如「小明」+「那个男孩」+「孩子」），如果不归并会导致 voicebank 重复生成 voice reference、最终音频音色不一致。本层用两层归并控制。
+
+### 9.1 第一层：story_resolver 跨段 known_speakers
+
+- 维护 `known_speakers: list[str]` 跨段累积
+- 每段调 LLM 时把已识别角色一并传入 prompt，强约束 LLM 优先复用已知名
+- LLM 返回后过 `_normalize_speaker_alias` 做**最保守归并**：仅清洗标点 + 全等命中，不做后缀剥离
+- 目的：减少明显 naming drift（如不同段落 LLM 输出带不带尾标点的不一致）
+
+### 9.2 第二层：character_analyzer LLM alias_map
+
+- prompt 要求 LLM 输出 `characters` 数组 + `alias_map` 字典（别名 → canonical 名）
+- canonical 名优先采用原文首次出现且稳定的称呼（优先级：人名 > 职务 > 代词）
+- LLM 把指代同一角色的不同称呼（绰号 / 亲属称谓 / 描述性称呼）合并到 canonical
+- alias_map 的 value 必须出现在 `characters[].name` 中
+
+### 9.3 第二层 fallback：_SAFE_TITLES 安全后缀剥离
+
+LLM 没返回 alias_map 时（结构异常 / MockLLMClient）兜底：
+
+- 用本文件内的 `_SAFE_TITLES`（先生 / 女士 / 老师 / 师傅 / 同志 / 小姐 / 大叔 / 阿姨 / 爷爷 / 奶奶 10 个 ≥2 字、语义明确的社会称谓）
+- 仅当 speaker 以这些后缀结尾，且剥离后剩下的部分（≥2 字）能命中另一个 speaker 名时才合并
+- **不做前缀剥离**（老X / 小X / 阿X 风险高，留给 LLM alias_map 处理）
+
+### 9.4 不归并的边界
+
+- 父子关系（"小明" vs "小明爸爸"）
+- 主仆关系
+- 人和动物
+- narrator 与故事角色（narrator 永远独立，不在 characters 数组中）
+
+### 9.5 canonical 名选取原则
+
+- 优先级：人名 > 职务 > 代词
+- 原文首次出现且后文较稳定的称呼
+- **不要凭常识改写**：原文叫"小明"就不要 canonical 改成"明"
+
+### 9.6 已知 Gap：下游 speaker 映射未实现
+
+本次归并结果保存在 `characters.json` 的 `CharacterProfile.aliases` 字段，但 **resolved_segments 不回写 canonical**（保持 story_resolver 1:1 in/out 契约）。意味着：
+
+- segments 里 speaker 仍是各段 LLM 给的原始称呼（如「小明」「小明哥哥」并存）
+- voicebank 按 `CharacterProfile.name`（canonical）生成 voice reference，`speaker_to_voice` 字典 key 是 canonical 名
+- `tts_instruction_builder` 用 `segment.speaker`（如「小明哥哥」）查 `speaker_to_voice` 时**会查不到** → 走 fallback 失败
+
+**后续需要做**（不在本次范围）：
+
+- 在 `tts_instruction_builder` 或 pipeline 中段，根据 `characters[].aliases` 建立 `alias → canonical` 映射，查 `speaker_to_voice` 时先映射
+- 或者在 character_analyzer 之后增加一步「segments speaker 回写 canonical」

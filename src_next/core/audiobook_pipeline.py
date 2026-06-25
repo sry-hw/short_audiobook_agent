@@ -499,7 +499,7 @@ def run_pipeline(
                 resolved = reused
                 mode = "reused"
         if mode == "run":
-            resolved = resolve_speakers(segments_merged, llm_client, story_context=story_name)
+            resolved = resolve_speakers(segments_merged, llm_client, story_context=text)
             if save_json:
                 _save_json(resolved, resolved_path)
         elapsed = time.time() - t0
@@ -525,7 +525,7 @@ def run_pipeline(
                 characters = reused
                 mode = "reused"
         if mode == "run":
-            characters = analyze_characters(resolved, llm_client, story_context=story_name)
+            characters = analyze_characters(resolved, llm_client, story_context=text)
             if save_json:
                 _save_json(characters, characters_path)
         elapsed = time.time() - t0

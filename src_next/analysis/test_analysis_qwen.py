@@ -261,7 +261,7 @@ def main() -> int:
 
     # 4. resolve_speakers
     t0 = time.time()
-    resolved = resolve_speakers(segments_merged, llm, story_context=story.story_name)
+    resolved = resolve_speakers(segments_merged, llm, story_context=story.text)
     t_resolve = time.time() - t0
     resolved_counts = _count_by_type(resolved)
     speakers_in_dialogue = sorted({
@@ -275,7 +275,7 @@ def main() -> int:
 
     # 5. analyze_characters
     t0 = time.time()
-    characters = analyze_characters(resolved, llm, story_context=story.story_name)
+    characters = analyze_characters(resolved, llm, story_context=story.text)
     t_char = time.time() - t0
     print(f"[5/8] analyze_characters        → {len(characters)} 个角色  "
           f"(narrator at idx 0: {characters[0].name == 'narrator'})  "

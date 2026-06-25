@@ -31,6 +31,8 @@ def merge_audio_segments(
     audio_segments: list[AudioSegmentResult],
     final_path: str,
     pause_seconds_after: dict[str, float] | None = None,
+    *,
+    min_silence_seconds: float = 0.4,
 ) -> AudioResult:
     """把 audio_segments 拼接成最终 wav，段间插入静音。
 
@@ -41,6 +43,11 @@ def merge_audio_segments(
             导演层 ``DirectorInstruction.pause_hint`` 通过调用方按 segment_id
             传进来。缺失的 segment_id 按 0 处理（不插静音）。
             静音以"零字节帧"形式插入，和原始 wav 同采样率 / 同位深 / 同声道。
+        min_silence_seconds: 段间最小静音下限（秒）。即使 ``pause_seconds_after``
+            里某段被 LLM 给了很小的值（如 0.2 秒）或没给，也会被提到此下限；
+            **最后一段**不应用此下限（避免末尾多余静音）。设为 0 可关闭。
+            默认 0.4 秒，是为了避免中文 TTS 输出本身连贯 + 过短 pause 导致
+            段间听感紧凑。
 
     Returns:
         AudioResult：
@@ -86,7 +93,9 @@ def merge_audio_segments(
     total_silence_frames = 0
     skipped_format: list[tuple[str, str]] = []
 
-    for seg in usable:
+    total_usable = len(usable)
+    for idx, seg in enumerate(usable):
+        is_last = (idx == total_usable - 1)
         try:
             with wave.open(str(Path(seg.audio_path).resolve()), "rb") as wf:
                 params = wf.getparams()
@@ -112,6 +121,10 @@ def merge_audio_segments(
             pause_s = float(pause_map.get(seg.segment_id, 0.0) or 0.0)
             if pause_s < 0:
                 pause_s = 0.0
+            # 段间最小静音下限（双保险）：LLM 给的 pause_hint 过小或没给时，
+            # 强制提到 min_silence_seconds；最后一段不应用（避免末尾多余静音）。
+            if not is_last and min_silence_seconds > 0 and pause_s < min_silence_seconds:
+                pause_s = min_silence_seconds
             frames_with_pause.append((frames, pause_s))
             total_frames += params.nframes
             if pause_s > 0 and base_params is not None:
