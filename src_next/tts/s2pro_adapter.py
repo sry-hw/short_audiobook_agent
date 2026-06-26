@@ -218,7 +218,8 @@ class S2ProTTSAdapter(BaseTTSAdapter):
         # 音色克隆配置
         self.enable_reference_audio: bool = bool(extra_args.get("enable_reference_audio", True))
         # prompt_text 必须与 voicebank wav 内容匹配；profile 应与 voicebank.reference_text 一致
-        self.prompt_text: str = str(extra_args.get("prompt_text", ""))
+        #兼容profile 中可能的reference_text别名 (与 voicebank.reference_text 命名保持一致)
+        self.prompt_text: str = str(extra_args.get("prompt_text") or extra_args.get("reference_text") or "")
 
         # 生成参数
         self.temperature: float = float(extra_args.get("temperature", _DEFAULT_TEMPERATURE))
