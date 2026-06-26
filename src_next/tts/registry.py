@@ -30,6 +30,7 @@ def create_tts_adapter(
             - "indextts": IndexTTSAdapter（subprocess 调本地 IndexTTS CLI，蓝区用）
             - "indextts_http": IndexTTSHTTPAdapter（HTTP 直连服务器，黄区用）
             - "cosyvoice_http": CosyVoiceHTTPAdapter（HTTP 直连服务器，黄区用）
+            - "s2pro_http": S2ProTTSAdapter（Fish Audio S2-Pro；v1 转换验证模式）
             - "cosyvoice" / "fishpro" / "qwen_tts": 占位，未实现
         **config: 传给具体 adapter 构造函数的参数（如 engine_root / base_url）。
 
@@ -55,6 +56,10 @@ def create_tts_adapter(
         from .cosyvoice_http import CosyVoiceHTTPAdapter
         return CosyVoiceHTTPAdapter(**config)
 
+    if backend == "s2pro_http":
+        from .s2pro_adapter import S2ProTTSAdapter
+        return S2ProTTSAdapter(**config)
+
     if backend == "cosyvoice":
         from .cosyvoice_adapter import CosyVoiceAdapter
         return CosyVoiceAdapter(**config)
@@ -70,5 +75,5 @@ def create_tts_adapter(
     raise TTSError(
         f"未知 TTS backend: {backend!r}。"
         "当前支持: 'mock', 'indextts', 'indextts_http', 'cosyvoice_http', "
-        "'cosyvoice'（占位）, 'fishpro'（占位）, 'qwen_tts'（占位）。"
+        "'s2pro_http', 'cosyvoice'（占位）, 'fishpro'（占位）, 'qwen_tts'（占位）。"
     )

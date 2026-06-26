@@ -1,0 +1,109 @@
+# yellow_gemma_qwen_s2pro.yaml
+#
+# 完整 pipeline profile（黄区）：
+#   region    = yellow
+#   llm       = gemma4_http        (Gemma4-26B-A4B)
+#   voicebank = qwen3_http         (Qwen3-TTS VoiceDesign；为 S2Pro 提供 reference_audio)
+#   tts       = s2pro_http         (Fish Audio S2-Pro 4B)
+#
+# 关键设计点：
+#   * S2Pro 通过 reference_audio + prompt_text 实现音色克隆；
+#   * voicebank 层完全复用 qwen3_http（生成的 per-character wav 就是 S2Pro 需要的参考音频）；
+#   * tts.reference_text 必须与 voicebank.reference_text **完全一致**
+#     （S2Pro 要求 prompt_text 与参考音频内容逐字匹配，否则克隆效果劣化）；
+#   * 当前阶段（v1）adapter 只做转换验证，不调真实 S2Pro HTTP；
+#     v2 会启用真实合成（需先扩展 /v1/voicegen/generate wrapper 接受 reference_audio）。
+#
+# 5 个必填块：llm / voicebank / tts / output / pipeline
+# 可选块：webui（让 WebUI 下拉框显示更友好的中文名）
+
+name: yellow_gemma_qwen_s2pro
+region: yellow
+description: |
+  黄区完整链路：Gemma4-26B-A4B LLM + Qwen3-TTS VoiceDesign HTTP voicebank
+  + Fish Audio S2-Pro 4B HTTP tts。
+  S2Pro 通过 reference_audio 实现音色克隆（复用 qwen voicebank 产物），
+  并支持 15000+ 内联标签 + 自由文本描述做细粒度韵律控制。
+  v1：转换验证阶段，不调真实 S2Pro；v2：扩展 wrapper 后启用真实合成。
+
+# ── webui（可选）：让下拉框显示友好中文名 ──────────────────────────────
+# discover_profiles 优先级：webui.display_name > display_name > name > filename_stem
+webui:
+  display_name: "黄区 Gemma4 + Qwen VoiceDesign + S2Pro"
+  description: "S2Pro 4B；支持音色克隆 + 15000+ 内联标签（[excited]/[pause]/[emphasis]）"
+
+# ── llm：黄区 Gemma4-26B-A4B ──────────────────────────────────────────
+# bypass_proxy=true 必须；黄区内网 10.50.121.123 在开发机全局代理外。
+llm:
+  backend: gemma4_http
+  base_url: "http://10.50.121.123:8000/v1/chat/completions"
+  model: "gemma-4-26B-A4B"
+  timeout: 300
+  bypass_proxy: true
+
+# ── voicebank：Qwen3-TTS VoiceDesign HTTP ─────────────────────────────
+# 生成的 per-character wav 文件会被 S2Pro adapter 读作 reference_audio。
+# reference_text 必须与下面 tts.reference_text 一致。
+voicebank:
+  backend: qwen3_http
+  base_url: "http://10.50.121.102:8007"
+  output_subdir: "voicebank"
+  extra_args:
+    language: "Chinese"
+    reference_text: "你好，欢迎使用语音设计功能，这是一个测试句子。"
+    timeout_per_char: 60
+    max_workers: 4
+    bypass_proxy: true
+
+# ── tts：Fish Audio S2-Pro HTTP（v1：转换验证模式） ────────────────────
+# 服务地址参考 usage_guide_s2pro.md（项目根）。
+# v1 阶段 adapter 不调 HTTP，只产出 S2ProRenderResult（含 s2pro_text +
+# instruction + reference_audio_path + params）落盘供核验。
+tts:
+  backend: s2pro_http
+  base_url: "http://10.50.121.102:8006"
+  output_subdir: "audio_segments"
+  extra_args:
+    model: "s2pro-4b"
+    # ── 音色克隆配置 ──
+    # 启用后 adapter 从 voicebank_result 查 speaker → wav 路径，写入
+    # S2ProRenderResult.reference_audio_path；v2 实装时透传给 S2Pro API。
+    # false = 用模型默认音色（每次调用随机，不推荐用于有声书）。
+    enable_reference_audio: true
+    # 必须与 voicebank.reference_text 完全一致；
+    # 否则 S2Pro 拿到 wav 时 prompt_text 不匹配，克隆效果劣化。
+    reference_text: "你好，欢迎使用语音设计功能，这是一个测试句子。"
+    # ── 内联标签控制 ──
+    # 启用后 adapter 把通用字段（emotion/pace/volume/pitch/pause）翻译成
+    # [excited]/[pause]/[quiet] 等内联标签；false = 原文直出。
+    enable_inline_tags: true
+    # 标签密度三档：
+    #   low    = emotion + pause + stress_wraps（最干净）
+    #   medium = + pace + volume + pitch（默认推荐）
+    #   high   = + intensity-driven inferred tags（[sigh]/[inhale]/[laughing]）
+    max_tag_density: "medium"
+    # ── 生成参数（v2 实装时透传给 S2Pro API） ──
+    temperature: 0.7
+    top_p: 0.7
+    max_new_tokens: 4096
+    # ── 工程参数 ──
+    timeout_per_seg: 300
+    bypass_proxy: true
+
+# ── output：黄区 pipeline 输出根目录 ──────────────────────────────────
+output:
+  root: "output-src-next/yellow_gemma_qwen_s2pro"
+
+# ── pipeline：流程开关 ─────────────────────────────────────────────────
+pipeline:
+  save_intermediate_json: true
+  reuse_existing: false
+  stop_on_tts_error: false
+
+notes:
+  - "S2Pro 通过 reference_audio 实现音色克隆；voicebank 层完全复用 qwen3_http。"
+  - "tts.reference_text 必须与 voicebank.reference_text 完全一致（S2Pro 强约束）。"
+  - "v1 阶段 adapter 不调真实 HTTP；只产出 S2ProRenderResult 落盘供核验。"
+  - "v2 实装真实合成前需扩展 /v1/voicegen/generate wrapper 接受 reference_audio 字段。"
+  - "max_tag_density=high 会加 [sigh]/[laughing] 等推断标签；过密可降为 low/medium。"
+  - "切换 backend 组合只换 profile，不改 adapter / pipeline 代码。"
